@@ -48,7 +48,7 @@ simplemon/
 **Требования**: Linux, Go ≥ 1.21
 
 ```bash
-git clone https://github.com/your/simplemon
+git clone https://github.com/dsamsonov/simplemon
 cd simplemon
 go mod tidy
 make build

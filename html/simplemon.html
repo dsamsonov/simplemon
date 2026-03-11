@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<!-- SimpleMon frontend v1.0.0 -->
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SimpleMon v1.0.0</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Syne:wght@400;600;800&display=swap');
+
+:root {
+  --bg:      #f5f6f7;
+  --bg2:     #ffffff;
+  --bg3:     #f0f1f3;
+  --border:  #e2e5e9;
+  --border2: #d0d4da;
+  --text:    #1a1f27;
+  --text2:   #6b7585;
+  --text3:   #a0a9b8;
+  --accent:  #0077cc;
+  --accent2: #005fa3;
+  --green:   #1a9e5c;
+  --green2:  #e6f6ee;
+  --orange:  #d97706;
+  --red:     #dc2626;
+  --purple:  #7c3aed;
+  --yellow:  #b45309;
+  --mono: 'JetBrains Mono', monospace;
+  --disp: 'Syne', sans-serif;
+  --r: 3px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-height: 100vh;
+  line-height: 1.4;
+}
+
+
+header {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 20px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.logo {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  text-decoration: none;
+}
+.logo-icon { flex-shrink: 0; display:block; }
+.logo-text {
+  font-family: var(--disp); font-size: 17px; font-weight: 800;
+  letter-spacing: -0.5px; color: var(--text);
+  display: flex; align-items: baseline; gap: 0;
+}
+.logo-text em { color: var(--accent); font-style: normal; }
+
+.pulse-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+.pulse-dot.on  { animation: blink 2s ease-in-out infinite; }
+.pulse-dot.err { background: var(--red); animation: none; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.hdr-stats { display: flex; gap: 0; flex: 1; flex-wrap: wrap; }
+.hstat {
+  display: flex; flex-direction: column; gap: 1px;
+  min-width: 80px; padding: 0 14px;
+  border-right: 1px solid var(--border);
+}
+.hstat:last-child { border-right: none; }
+.hstat-v { font-weight: 600; color: var(--text); }
+.hstat-l { font-size: 10px; color: var(--text2); }
+
+.hdr-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.inp {
+  background: var(--bg3); border: 1px solid var(--border2);
+  color: var(--text); font-family: var(--mono); font-size: 11px;
+  padding: 5px 10px; border-radius: var(--r); width: 190px; outline: none;
+  transition: border-color .2s;
+}
+.inp:focus { border-color: var(--accent); }
+
+.btn {
+  padding: 5px 13px; border: none; border-radius: var(--r);
+  font-family: var(--mono); font-size: 11px;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.btn-primary { background: var(--accent2); color: #fff; }
+.btn-primary:hover { background: var(--accent); color: #000; }
+
+
+main {
+  padding: 16px 20px; max-width: 1600px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+.section-lbl {
+  font-family: var(--disp); font-size: 10px; font-weight: 600;
+  letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 10px;
+}
+
+.g4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.g2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+.ga { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 12px; }
+.g-iface { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 12px; align-items: stretch; }
+.g-iface .card { display:flex; flex-direction:column; }
+.g-iface .card-body { flex:1; display:flex; flex-direction:column; }
+.g-iface .rateblock { margin-top:auto; padding-top:8px; }
+
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  animation: fadeUp .35s ease both;
+}
+.card:nth-child(2){animation-delay:.06s}
+.card:nth-child(3){animation-delay:.12s}
+.card:nth-child(4){animation-delay:.18s}
+@keyframes fadeUp {
+  from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)}
+}
+
+.card-hd {
+  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  background: var(--bg3); display: flex; align-items: center; justify-content: space-between;
+}
+.card-title {
+  font-family: var(--disp); font-size: 10px; font-weight: 600;
+  letter-spacing: .8px; text-transform: uppercase; color: var(--text2);
+}
+.card-val { font-size: 11px; font-weight: 700; }
+.card-body { padding: 12px 14px; }
+
+.gauge { display: flex; flex-direction: column; gap: 5px; }
+.gauge-num {
+  font-family: var(--disp); font-size: 34px; font-weight: 800;
+  line-height: 1; letter-spacing: -1px;
+}
+.gauge-sub { font-size: 11px; color: var(--text2); }
+.gbar { height: 3px; background: var(--border2); border-radius: 2px; overflow:hidden; margin-top:3px; }
+.gbar-f { height:100%; border-radius:2px; transition: width .5s ease, background .5s; }
+
+.ch-wrap       { position:relative; height:130px; }
+.ch-wrap2      { position:relative; height:160px; }
+.ch-wrap-iface { position:relative; height:180px; }
+
+.cores {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(52px,1fr));
+  gap: 10px; padding: 12px 14px;
+}
+.core { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.core-lbl { font-size: 10px; color: var(--text3); }
+.core-tube {
+  width:22px; height:52px; background: var(--border); border-radius: 2px;
+  position:relative; overflow:hidden; display:flex; align-items:flex-end;
+}
+.core-fill { width:100%; border-radius:2px 2px 0 0; transition: height .4s ease, background .4s; }
+.core-v { font-size:10px; font-weight:600; }
+
+.itag { padding:1px 6px; border-radius:2px; font-size:10px; font-weight:700; }
+.itag-up { background:var(--green2); color:var(--green); }
+.itag-dn { background:#fef2f2; color:var(--red); }
+
+/* unified interface rows */
+/* interface info grid — одинаковые метки слева, значения справа */
+.iface-grid { display:table; width:100%; border-spacing:0; }
+.iface-row  { display:table-row; }
+.iface-row + .iface-row .ik,
+.iface-row + .iface-row .iv { border-top:1px solid var(--border); }
+.ik {
+  display:table-cell;
+  color:var(--text2); font-size:11px;
+  white-space:nowrap; vertical-align:top;
+  padding:5px 12px 5px 0;
+  width:58px; min-width:58px;
+}
+.iv {
+  display:table-cell;
+  color:var(--text); font-weight:500; font-size:11px;
+  vertical-align:top; padding:5px 0;
+  word-break:break-all;
+}
+.ip-list { display:flex; flex-direction:column; gap:1px; }
+
+/* rate rows — фиксированные колонки */
+.rateblock { margin-top:8px; }
+.ratebar {
+  display:grid;
+  grid-template-columns: 14px 88px 1fr 62px;
+  align-items:center; gap:8px;
+  padding:4px 0;
+  border-top:1px solid var(--border);
+}
+.ratebar:first-child { border-top:none; }
+.rate-arrow { font-size:10px; text-align:center; }
+.rate-val   { font-weight:600; font-size:11px; }
+.rate-bar   { height:2px; background:var(--border2); border-radius:2px; overflow:hidden; }
+.rate-bar-f { height:100%; border-radius:2px; transition:width .4s ease; }
+.rate-total { font-size:10px; color:var(--text2); text-align:right; white-space:nowrap; }
+
+.wtext {
+  font-family: var(--mono); font-size: 11px; color: var(--text2);
+  white-space: pre; overflow: auto; line-height: 1.65;
+  height: 190px; min-height: 190px; max-height: 190px;
+  padding: 10px 14px; scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
+}
+
+.statusbar {
+  display:flex; align-items:center; gap:10px;
+  padding:5px 14px; font-size:10px; color:var(--text3);
+  border-top:1px solid var(--border);
+}
+.sdot { width:5px;height:5px;border-radius:50%; }
+.sdot-ok  { background:var(--green); }
+.sdot-err { background:var(--red); }
+.sdot-ld  { background:var(--orange); animation:blink 1s ease-in-out infinite; }
+
+.utrows { display:flex; flex-direction:column; gap:0; }
+.utr {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:7px 14px; border-bottom:1px solid var(--border);
+}
+.utr:last-child { border-bottom:none; }
+.utl { color:var(--text2); }
+.utv { font-weight:600; }
+
+.toast {
+  position:fixed; bottom:18px; right:18px;
+  background:#fef2f2; border:1px solid var(--red); color:var(--red);
+  padding:9px 14px; border-radius:var(--r); font-size:11px;
+  z-index:9999; opacity:0; transform:translateY(8px);
+  transition: all .25s; pointer-events:none;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+
+.empty {
+  display:flex; align-items:center; justify-content:center;
+  min-height: 260px; flex-direction:column; gap:12px; color:var(--text3);
+}
+.empty-title { font-family:var(--disp); font-size:14px; font-weight:600; color:var(--text2); }
+
+@media(max-width:960px){ .g4{grid-template-columns:repeat(2,1fr)} }
+@media(max-width:600px){ .g4,.g2{grid-template-columns:1fr} .hdr-stats{display:none} }
+
+.cg{color:var(--green)} .co{color:var(--orange)} .cr{color:var(--red)}
+.ca{color:var(--accent)} .cp{color:var(--purple)} .cy{color:var(--yellow)}
+
+/* chart mode tabs */
+.ch-tabs { display:flex; gap:2px; }
+.tr-tabs { display:flex; gap:2px; margin-left:auto; }
+.ch-tab {
+  padding:3px 9px; font-family:var(--mono); font-size:10px;
+  border:1px solid var(--border2); border-radius:2px;
+  background:transparent; color:var(--text2);
+  cursor:pointer; transition:all .12s; line-height:1.4;
+}
+.ch-tab:hover { background:var(--bg3); color:var(--text); }
+.ch-tab.active { background:var(--text); color:var(--bg2); border-color:var(--text); }
+
+.host-select {
+  background: var(--bg3); border: 1px solid var(--border2);
+  color: var(--text); font-family: var(--mono); font-size: 11px;
+  padding: 5px 8px; border-radius: var(--r); outline: none;
+  cursor: pointer; max-width: 240px;
+}
+.host-select:focus { border-color: var(--accent); }
+.host-label {
+  font-size: 10px; color: var(--text2); letter-spacing: .5px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="7" fill="#1a1f27"/>
+  <polyline
+    points="3,16 7,16 9,10 11,22 13,14 15,18 17,16 21,16 23,11 25,21 27,16 29,16"
+    stroke="#1a9e5c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="29" cy="16" r="1.8" fill="#1a9e5c">
+    <animate attributeName="opacity" values="1;0.2;1" dur="2s" repeatCount="indefinite"/>
+  </circle>
+</svg>
+    <div class="logo-text"><em>simple</em>mon</div>
+    <div class="pulse-dot" id="dot"></div>
+  </div>
+
+  <div class="hdr-stats">
+    <div class="hstat"><span class="hstat-v" id="h-cpu">—</span><span class="hstat-l">cpu</span></div>
+    <div class="hstat"><span class="hstat-v" id="h-ram">—</span><span class="hstat-l">ram</span></div>
+    <div class="hstat"><span class="hstat-v" id="h-cores">—</span><span class="hstat-l">cores</span></div>
+    <div class="hstat"><span class="hstat-v cy" id="h-up">—</span><span class="hstat-l">sys uptime</span></div>
+    <div class="hstat"><span class="hstat-v cg" id="h-be">—</span><span class="hstat-l">mon uptime</span></div>
+    <div class="hstat"><span class="hstat-v cg" id="h-rx">—</span><span class="hstat-l" id="h-rx-lbl">— ↓rx</span></div>
+    <div class="hstat"><span class="hstat-v ca" id="h-tx">—</span><span class="hstat-l" id="h-tx-lbl">— ↑tx</span></div>
+  </div>
+
+  <div class="hdr-right" id="hdr-right">
+    <!-- заполняется initHosts() -->
+  </div>
+</header>
+
+<main id="app">
+  <div class="empty">
+    <div class="empty-title">SimpleMon</div>
+    <div style="color:var(--text2)">Подключение…</div>
+  </div>
+</main>
+
+<span id="api-url-val" style="display:none"></span>
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// Chart.js defaults
+// ══════════════════════════════════════════════
+Chart.defaults.color = '#6b7585';
+Chart.defaults.borderColor = '#e2e5e9';
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
+Chart.defaults.font.size = 10;
+
+// ══════════════════════════════════════════════
+// App state
+// ══════════════════════════════════════════════
+let realMode=false, realTmr=null, realInfoTmr=null;
+let BASE_URL='', charts={}, ifMax={};
+let ifBuilt=false, coresBuilt=false;
+let timeRange=0;
+const memBytes={}; // stores used_bytes arrays for RAM/Swap tooltips // 0=all, N=last N seconds — set by range buttons
+let fullData=null, lastData=null; // cached responses
+let backendInterval=3; // interval_secs from /info
+
+// ══════════════════════════════════════════════
+// Real backend
+// ══════════════════════════════════════════════
+function stopReal(){ realMode=false; clearInterval(realTmr); realTmr=null; clearInterval(realInfoTmr); realInfoTmr=null; window._hdrIfSet=null; }
+
+async function connectReal() {
+  const url = BASE_URL; // may be empty string for proxy mode
+  stopReal();
+  ifBuilt=false; coresBuilt=false;
+  buildUI(); setDot('ld'); setStatus('ld','Connecting…');
+  try {
+    // Liveness check первым
+    await apiFetch('/health');
+
+    // Начальная загрузка: /info + /metrics/full + /widgets одновременно
+    const [info,full,wids]=await Promise.all([
+      apiFetch('/info'),
+      apiFetch('/metrics/full'),
+      apiFetch('/widgets').catch(()=>null),
+    ]);
+    fullData=full; lastData=null;
+    renderInfo(info); renderMetrics(applyRange(full),true); if(wids) renderWidgets(wids);
+    setDot('on'); setStatus('ok','Connected · '+tsNow()); realMode=true;
+
+    // Интервал из бэкенда, fallback 3s, минимум 1s
+    const ivl=Math.max(1000,(info.interval_secs||3)*1000);
+
+    // /metrics/last + /widgets каждые interval_secs
+    realTmr=setInterval(async()=>{
+      try {
+        const [last,w]=await Promise.all([
+          apiFetch('/metrics/last'),
+          apiFetch('/widgets').catch(()=>null),
+        ]);
+        fullData = mergeLastIntoFull(fullData, last);
+        renderMetrics(applyRange(fullData),false); if(w) renderWidgets(w);
+        setStatus('ok','Updated · '+tsNow());
+      } catch(e){ setStatus('err','Poll error: '+e.message); }
+    },ivl);
+
+    // /info раз в минуту — полный рендер (интерфейсы, ядра, аптайм)
+    realInfoTmr=setInterval(async()=>{
+      try {
+        const i=await apiFetch('/info');
+        // Обновляем только скалярные поля — интерфейсы уже построены
+        set('sys-uptime',fmtUptime(i.system_uptime_seconds));
+        set('be-uptime', fmtUptime(i.backend_uptime_seconds));
+        set('h-up', fmtUptime(i.system_uptime_seconds));
+        set('h-be', fmtUptime(i.backend_uptime_seconds));
+        set('interval-v', i.interval_secs+'s');
+        set('reten-v', fmtUptime(i.retention_seconds));
+      } catch(_){}
+    },60000);
+
+  } catch(e){ setDot('err'); setStatus('err','Failed: '+e.message); showToast('Cannot connect to '+(url||window.location.host)+': '+e.message); }
+}
+
+
+// Merge fresh /metrics/last points into fullData, keeping ring structure.
+// Simply appends new points that are newer than the last timestamp in fullData.
+function mergeLastIntoFull(full, last) {
+  if (!full || !last) return last;
+
+  function mergeArrays(oldArr, newArr) {
+    if (!oldArr || !newArr || !newArr.length) return oldArr || newArr;
+    // newArr already contains the last N points from the ring.
+    // Find how many of them are new (timestamp > last in oldArr).
+    const lastTs = oldArr[oldArr.length - 1];
+    const firstNew = newArr.findIndex(v => v === undefined ? false : true); // always 0
+    // For timestamp arrays we compare values; for value arrays we just append same count.
+    return oldArr; // placeholder, see below
+  }
+
+  // Use timestamps to find new points
+  const oldTs = full.cpu.timestamps;
+  const newTs = last.cpu.timestamps;
+  if (!oldTs || !newTs || !newTs.length) return full;
+
+  const lastOldTs = oldTs[oldTs.length - 1] || 0;
+  // Find index in newTs where timestamps become newer than lastOldTs
+  let cutIdx = 0;
+  for (let i = 0; i < newTs.length; i++) {
+    if (newTs[i] > lastOldTs) { cutIdx = i; break; }
+    cutIdx = newTs.length; // all already seen
+  }
+  if (cutIdx >= newTs.length) return full; // nothing new
+
+  function appendSlice(oldArr, newArr) {
+    if (!oldArr || !newArr) return oldArr || newArr || [];
+    const slice = newArr.slice(cutIdx);
+    if (!slice.length) return oldArr;
+    return [...oldArr, ...slice];
+  }
+
+  const mergeIface = (oldIf, newIf) => {
+    if (!oldIf || !newIf) return oldIf || newIf;
+    const iTs = newIf.timestamps || [];
+    let iCut = 0;
+    const lastIfTs = (oldIf.timestamps||[])[((oldIf.timestamps||[]).length)-1] || 0;
+    for (let i = 0; i < iTs.length; i++) {
+      if (iTs[i] > lastIfTs) { iCut = i; break; }
+      iCut = iTs.length;
+    }
+    if (iCut >= iTs.length) return oldIf;
+    const ap = arr => arr ? [...arr, ...arr.slice(iCut)] : arr;
+    // reuse cutIdx-equivalent for iface
+    const apI = arr => arr ? [...arr, ...(arr.slice ? newIf[Object.keys(newIf).find(k=>newIf[k]===arr)]||[] : []).slice(iCut)] : arr;
+    return {
+      ...oldIf,
+      timestamps:   [...oldIf.timestamps,   ...newIf.timestamps.slice(iCut)],
+      bytes_recv:   [...oldIf.bytes_recv,    ...newIf.bytes_recv.slice(iCut)],
+      bytes_sent:   [...oldIf.bytes_sent,    ...newIf.bytes_sent.slice(iCut)],
+      packets_recv: [...oldIf.packets_recv,  ...newIf.packets_recv.slice(iCut)],
+      packets_sent: [...oldIf.packets_sent,  ...newIf.packets_sent.slice(iCut)],
+      err_in:       [...oldIf.err_in,        ...newIf.err_in.slice(iCut)],
+      err_out:      [...oldIf.err_out,       ...newIf.err_out.slice(iCut)],
+      rx_rate_bits: [...oldIf.rx_rate_bits,  ...newIf.rx_rate_bits.slice(iCut)],
+      tx_rate_bits: [...oldIf.tx_rate_bits,  ...newIf.tx_rate_bits.slice(iCut)],
+    };
+  };
+
+  const ifaces = {};
+  const allIfNames = new Set([
+    ...Object.keys(full.interfaces||{}),
+    ...Object.keys(last.interfaces||{})
+  ]);
+  allIfNames.forEach(nm => {
+    ifaces[nm] = mergeIface((full.interfaces||{})[nm], (last.interfaces||{})[nm]);
+  });
+
+  return {
+    ...full,
+    cpu: {
+      ...full.cpu,
+      timestamps: appendSlice(full.cpu.timestamps, last.cpu.timestamps),
+      total:      appendSlice(full.cpu.total,      last.cpu.total),
+      cores:      (full.cpu.cores||[]).map((c,i) =>
+                    appendSlice(c, (last.cpu.cores||[])[i]||[])),
+    },
+    ram: {
+      ...full.ram,
+      used_bytes: appendSlice(full.ram.used_bytes, last.ram.used_bytes),
+      free_bytes: appendSlice(full.ram.free_bytes, last.ram.free_bytes),
+      used_pct:   appendSlice(full.ram.used_pct,   last.ram.used_pct),
+    },
+    swap: {
+      ...full.swap,
+      used_bytes: appendSlice(full.swap.used_bytes, last.swap.used_bytes),
+      free_bytes: appendSlice(full.swap.free_bytes, last.swap.free_bytes),
+      used_pct:   appendSlice(full.swap.used_pct,   last.swap.used_pct),
+    },
+    interfaces: ifaces,
+  };
+}
+
+async function apiFetch(path){ const r=await fetch(BASE_URL+path,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+
+// ══════════════════════════════════════════════
+// UI
+// ══════════════════════════════════════════════
+function resetUI(){ charts={}; ifMax={}; ifBuilt=false; coresBuilt=false;
+  document.getElementById('app').innerHTML=`<div class="empty"><div class="empty-title">SimpleMon</div><div style="color:var(--text2)">Выберите хост для подключения</div></div>`; }
+
+function buildUI(){
+  charts={}; ifMax={}; ifBuilt=false; coresBuilt=false;
+  document.getElementById('app').innerHTML=`
+<div>
+  <div class="section-lbl">Overview</div>
+  <div class="g4">
+    <div class="card">
+      <div class="card-hd"><span class="card-title">CPU Total</span><span class="card-val" id="cpu-hv">—</span></div>
+      <div class="card-body"><div class="gauge">
+        <div class="gauge-num cg" id="cpu-big">—</div>
+        <div class="gauge-sub" id="cpu-sub">—</div>
+        <div class="gbar"><div class="gbar-f" id="cpu-bar" style="width:0%"></div></div>
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">RAM</span><span class="card-val" id="ram-hv">—</span></div>
+      <div class="card-body"><div class="gauge">
+        <div class="gauge-num ca" id="ram-big">—</div>
+        <div class="gauge-sub" id="ram-sub">—</div>
+        <div class="gbar"><div class="gbar-f" id="ram-bar" style="width:0%;background:var(--accent)"></div></div>
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Swap</span><span class="card-val" id="swp-hv">—</span></div>
+      <div class="card-body"><div class="gauge">
+        <div class="gauge-num cp" id="swp-big">—</div>
+        <div class="gauge-sub" id="swp-sub">—</div>
+        <div class="gbar"><div class="gbar-f" id="swp-bar" style="width:0%;background:var(--purple)"></div></div>
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">System</span></div>
+      <div class="utrows">
+        <div class="utr"><span class="utl">Uptime</span><span class="utv cy" id="sys-uptime">—</span></div>
+        <div class="utr"><span class="utl">simplemon</span><span class="utv cg" id="be-uptime">—</span></div>
+        <div class="utr"><span class="utl">Interval</span><span class="utv" id="interval-v">—</span></div>
+        <div class="utr"><span class="utl">Retention</span><span class="utv" id="reten-v">—</span></div>
+      </div>
+      <div class="statusbar"><div class="sdot" id="conn-dot"></div><span id="conn-status">—</span></div>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+  <div class="section-lbl" style="margin-bottom:0">Time range</div>
+  <div class="tr-tabs" id="tr-tabs"></div>
+</div>
+
+<div>
+  <div class="section-lbl">CPU</div>
+  <div class="g2">
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Total Usage</span><span class="card-val" id="cpu-cv">—</span></div>
+      <div class="card-body"><div class="ch-wrap2"><canvas id="ch-cpu"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Per Core</span></div>
+      <div class="cores" id="cores-grid"></div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="section-lbl">Memory</div>
+  <div class="g2">
+    <div class="card">
+      <div class="card-hd"><span class="card-title">RAM Usage</span><span class="card-val" id="ram-cv">—</span></div>
+      <div class="card-body"><div class="ch-wrap"><canvas id="ch-ram"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Swap Usage</span><span class="card-val" id="swp-cv">—</span></div>
+      <div class="card-body"><div class="ch-wrap"><canvas id="ch-swp"></canvas></div></div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="section-lbl">Network Interfaces</div>
+  <div class="g-iface" id="iface-info"></div>
+</div>
+
+<div id="sec-iface" style="display:none">
+  <div class="section-lbl">Network Traffic</div>
+  <div class="g2" id="iface-charts"></div>
+</div>
+
+<div id="sec-widgets" style="display:none">
+  <div class="section-lbl">Custom Widgets</div>
+  <div class="g2" id="widgets-wrap"></div>
+</div>`;
+}
+
+// ══════════════════════════════════════════════
+// Charts
+// ══════════════════════════════════════════════
+const CC={green:'#1a9e5c',accent:'#0077cc',orange:'#d97706',red:'#dc2626',purple:'#7c3aed',yellow:'#b45309'};
+
+function mkDs(label,data,color,fill=true){
+  return {label,data,borderColor:color,backgroundColor:fill?color+'14':'transparent',borderWidth:1.5,pointRadius:0,pointHoverRadius:3,tension:0,fill};
+}
+
+function makeChart(id,labels,datasets,opts={}){
+  const el=document.getElementById(id); if(!el) return;
+  if(charts[id]) charts[id].destroy();
+  charts[id]=new Chart(el,{
+    type:'line', data:{labels,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{display:!!opts.legend},
+        tooltip:{
+          backgroundColor:'#ffffff',borderColor:'#e2e5e9',borderWidth:1,
+          titleColor:'#6b7585',bodyColor:'#1a1f27',padding:8,
+          callbacks:{label:ctx=>{const v=ctx.parsed.y;
+            if(opts.unit==='bps')    return ` ${ctx.dataset.label}: ${fmtBits(v)}`;
+            if(opts.unit==='pkt')    return ` ${ctx.dataset.label}: ${fmtNum(v)} pkt/s`;
+            if(opts.unit==='err')    return ` ${ctx.dataset.label}: ${fmtNum(v)}`;
+            if(opts.unit==='custom') return ` ${ctx.dataset.label}: ${v.toFixed(1)}`;
+            if(opts.unit==='ram'||opts.unit==='swap'){
+              const bytes=(memBytes[opts.unit]||[])[ctx.dataIndex]||0;
+              return ` ${ctx.dataset.label}: ${v.toFixed(1)}% (${fmtBytes(bytes)})`;
+            }
+            return ` ${ctx.dataset.label}: ${v.toFixed(1)}%`;
+          }}
+        }
+      },
+      scales:{
+        x:{grid:{color:'#e2e5e9'},ticks:{maxTicksLimit:5,maxRotation:0}},
+        y:{grid:{color:'#e2e5e9'},min:opts.yMin??0,max:opts.yMax,
+          ticks:{callback:v=>{
+            if(opts.unit==='bps') return fmtBits(v);
+            if(opts.unit==='pkt'||opts.unit==='err') return fmtNum(v);
+            return v+'%';
+          }}
+        }
+      }
+    }
+  });
+}
+
+function updChart(id,labels,datasets){
+  const c=charts[id]; if(!c) return;
+  c.data.labels=labels;
+  datasets.forEach((ds,i)=>{if(c.data.datasets[i]) c.data.datasets[i].data=ds.data;});
+  c.update('none');
+}
+
+function ts2lbl(ts){ return ts.map(t=>{const d=new Date(t*1000); return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');}); }
+
+// ══════════════════════════════════════════════
+// Renderers
+// ══════════════════════════════════════════════
+function renderInfo(d){
+  set('sys-uptime',fmtUptime(d.system_uptime_seconds));
+  set('be-uptime',fmtUptime(d.backend_uptime_seconds));
+  set('interval-v',d.interval_secs+'s');
+  set('reten-v',fmtUptime(d.retention_seconds));
+  set('h-cores',d.num_cpu_cores+' cores');
+  set('h-up',fmtUptime(d.system_uptime_seconds));
+  set('h-be',fmtUptime(d.backend_uptime_seconds));
+  set('cpu-sub',d.num_cpu_cores+' logical cores');
+  buildRangeTabs(d.retention_seconds, d.interval_secs);
+
+  const container=document.getElementById('iface-info');
+  if(!container||ifBuilt) return;
+  ifBuilt=true;
+  const ifaces=d.interfaces||{}, names=Object.keys(ifaces);
+  if(!names.length) return;
+
+  container.innerHTML=names.map(n=>{const f=ifaces[n]; return `
+    <div class="card">
+      <div class="card-hd"><span class="card-title">${n}</span><span class="itag ${f.is_up?'itag-up':'itag-dn'}">${f.is_up?'UP':'DOWN'}</span></div>
+      <div class="card-body">
+        <div class="iface-grid">
+          <div class="iface-row"><span class="ik">MAC</span><span class="iv">${f.mac||'00:00:00:00:00:00'}</span></div>
+          <div class="iface-row"><span class="ik">IP</span><span class="iv"><div class="ip-list">${(f.ips||[]).map(ip=>`<span>${ip}</span>`).join('')||'—'}</div></span></div>
+          <div class="iface-row"><span class="ik">Speed</span><span class="iv">${f.speed_mbps?f.speed_mbps+' Mbps':'—'}</span></div>
+        </div>
+        <div class="rateblock" id="bw-${n}"></div>
+      </div>
+    </div>`;}).join('');
+
+  const sec=document.getElementById('sec-iface'), cc=document.getElementById('iface-charts');
+  if(sec&&cc){
+    sec.style.display='block';
+    cc.innerHTML=names.map(n=>`
+      <div class="card">
+        <div class="card-hd" style="flex-direction:column;align-items:stretch;gap:5px;padding-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="card-title">${n}</span>
+            <div class="ch-tabs">
+              <button class="ch-tab active" id="tab-${n}-traffic" onclick="setIfaceMode('${n}','traffic')">traffic</button>
+              <button class="ch-tab"        id="tab-${n}-packets" onclick="setIfaceMode('${n}','packets')">packets</button>
+              <button class="ch-tab"        id="tab-${n}-errors"  onclick="setIfaceMode('${n}','errors')">errors</button>
+            </div>
+          </div>
+          <span id="bps-${n}" style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3">—</span>
+        </div>
+        <div class="card-body"><div class="ch-wrap-iface"><canvas id="ch-if-${n}"></canvas></div></div>
+      </div>`).join('');
+  }
+}
+
+function renderMetrics(d,initial){
+  const cpuL=d.cpu.total.at(-1)||0;
+  const ramP=d.ram.used_pct.at(-1)||0;
+  const swpP=d.swap.used_pct.at(-1)||0;
+
+  const cpuCls=cpuL>=90?'cr':cpuL>=70?'co':'cg';
+  setClass('cpu-big','gauge-num',cpuCls); set('cpu-big',fmtP(cpuL));
+  set('cpu-hv',fmtP(cpuL)); set('cpu-cv',fmtP(cpuL)); set('h-cpu',fmtP(cpuL));
+  barW('cpu-bar',cpuL,cpuL>=90?'var(--red)':cpuL>=70?'var(--orange)':'var(--green)');
+
+  const ramUsed=d.ram.used_bytes.at(-1)||0;
+  set('ram-hv',fmtPMB(ramP,ramUsed)); set('ram-cv',fmtPMB(ramP,ramUsed)); set('h-ram',fmtPMB(ramP,ramUsed));
+  set('ram-big',fmtBytes(d.ram.used_bytes.at(-1)||0)); set('ram-sub','of '+fmtBytes(d.ram.total_bytes));
+  barW('ram-bar',ramP,'var(--accent)');
+
+  const swpUsed=d.swap.used_bytes.at(-1)||0;
+  set('swp-hv',d.swap.total_bytes>0?fmtPMB(swpP,swpUsed):fmtP(swpP)); set('swp-cv',d.swap.total_bytes>0?fmtPMB(swpP,swpUsed):fmtP(swpP));
+  set('swp-big',d.swap.total_bytes>0?fmtBytes(d.swap.used_bytes.at(-1)||0):'none');
+  set('swp-sub',d.swap.total_bytes>0?'of '+fmtBytes(d.swap.total_bytes):'—');
+  barW('swp-bar',swpP,'var(--purple)');
+
+  const lbls=ts2lbl(d.cpu.timestamps);
+  const cpuDs=[mkDs('CPU %',d.cpu.total,CC.green)];
+  if(initial) makeChart('ch-cpu',lbls,cpuDs,{yMax:100}); else updChart('ch-cpu',lbls,cpuDs);
+  set('cpu-cv',fmtP(cpuL));
+
+  renderCores(d.cpu.cores);
+
+  const ramDs=[mkDs('RAM %',d.ram.used_pct,CC.accent)];
+  memBytes['ram']=d.ram.used_bytes;
+  if(initial) makeChart('ch-ram',lbls,ramDs,{yMax:100,unit:'ram'}); else updChart('ch-ram',lbls,ramDs);
+  const swpDs=[mkDs('Swap %',d.swap.used_pct,CC.purple)];
+  memBytes['swap']=d.swap.used_bytes;
+  if(initial) makeChart('ch-swp',lbls,swpDs,{yMax:100,unit:'swap'}); else updChart('ch-swp',lbls,swpDs);
+  const swpUsedVal=d.swap.used_bytes.at(-1)||0, swpFreeVal=d.swap.free_bytes.at(-1)||0;
+
+  renderIfaces(d.interfaces,initial);
+}
+
+function renderCores(cores){
+  const g=document.getElementById('cores-grid'); if(!g) return;
+  if(!coresBuilt){
+    coresBuilt=true;
+    g.innerHTML=(cores||[]).map((_,i)=>`
+      <div class="core">
+        <div class="core-tube"><div class="core-fill" id="cf-${i}" style="height:0%"></div></div>
+        <div class="core-v" id="cv-${i}">0%</div>
+        <div class="core-lbl">c${i}</div>
+      </div>`).join('');
+  }
+  (cores||[]).forEach((cd,i)=>{
+    const v=cd.at(-1)||0;
+    const e=document.getElementById(`cf-${i}`),ve=document.getElementById(`cv-${i}`);
+    if(e){e.style.height=v+'%';e.style.background=v>=90?CC.red:v>=70?CC.orange:CC.green;e.style.opacity='0.85';}
+    if(ve){ve.textContent=v.toFixed(0)+'%';ve.className='core-v '+(v>=90?'cr':v>=70?'co':'cg');}
+  });
+}
+
+// режим графика для каждого интерфейса: 'traffic' | 'packets' | 'errors'
+const ifaceMode = {};
+// кеш последних данных по интерфейсу
+const ifaceData = {};
+
+function setIfaceMode(nm, mode) {
+  ifaceMode[nm] = mode;
+  // переключаем активный таб
+  ['traffic','packets','errors'].forEach(m => {
+    const t = document.getElementById(`tab-${nm}-${m}`);
+    if (t) t.className = 'ch-tab' + (m === mode ? ' active' : '');
+  });
+  // перерисовываем из кеша
+  if (ifaceData[nm]) drawIfaceChart(nm, ifaceData[nm], false);
+}
+
+
+// Converts cumulative counter array into per-second rates using timestamps.
+// Returns array of same length (first element = 0).
+function countersToRate(vals, timestamps, intervalSecs) {
+  if (!vals || vals.length < 2) return vals || [];
+  const out = new Array(vals.length).fill(0);
+  for (let i = 1; i < vals.length; i++) {
+    const dt = timestamps[i] - timestamps[i-1];
+    const secs = (dt > 0) ? dt : intervalSecs;
+    const delta = vals[i] - vals[i-1];
+    out[i] = delta >= 0 ? delta / secs : 0;
+  }
+  return out;
+}
+
+function drawIfaceChart(nm, d, initial) {
+  const mode = ifaceMode[nm] || 'traffic';
+  const lbls = ts2lbl(d.timestamps);
+  const cid = `ch-if-${nm}`;
+  let ds, opts, valStr;
+
+  if (mode === 'traffic') {
+    ds = [mkDs('RX', d.rx_rate_bits, CC.green), mkDs('TX', d.tx_rate_bits, CC.accent)];
+    opts = {unit:'bps', legend:true};
+    const rx=d.rx_rate_bits.at(-1)||0, tx=d.tx_rate_bits.at(-1)||0;
+    valStr = `↓${fmtBits(rx)} ↑${fmtBits(tx)}`;
+  } else if (mode === 'packets') {
+    const rxPps = countersToRate(d.packets_recv, d.timestamps, 3);
+    const txPps = countersToRate(d.packets_sent, d.timestamps, 3);
+    ds = [mkDs('RX pps', rxPps, CC.green), mkDs('TX pps', txPps, CC.accent)];
+    opts = {unit:'pkt', legend:true};
+    const pr=rxPps.at(-1)||0, ps=txPps.at(-1)||0;
+    valStr = `↓${fmtNum(pr)} ↑${fmtNum(ps)} pps`;
+  } else { // errors
+    const rxEps = countersToRate(d.err_in,  d.timestamps, 3);
+    const txEps = countersToRate(d.err_out, d.timestamps, 3);
+    ds = [mkDs('err in/s',  rxEps, CC.red), mkDs('err out/s', txEps, CC.orange)];
+    opts = {unit:'err', legend:true};
+    const ei=rxEps.at(-1)||0, eo=txEps.at(-1)||0;
+    valStr = `in:${fmtNum(ei)}/s out:${fmtNum(eo)}/s`;
+  }
+
+  set(`bps-${nm}`, valStr);
+  if (initial) makeChart(cid, lbls, ds, opts);
+  else {
+    // при смене режима — пересоздаём чарт целиком
+    const c = charts[cid];
+    if (c && c.data.datasets.length === ds.length &&
+        c.data.datasets[0].label === ds[0].label) {
+      updChart(cid, lbls, ds);
+    } else {
+      makeChart(cid, lbls, ds, opts);
+    }
+  }
+}
+
+function renderIfaces(ifaces, initial) {
+  if (!ifaces) return;
+  Object.entries(ifaces).forEach(([nm, d]) => {
+    const rx = d.rx_rate_bits.at(-1)||0, tx = d.tx_rate_bits.at(-1)||0;
+    const brTotal = d.bytes_recv.at(-1)||0, bsTotal = d.bytes_sent.at(-1)||0;
+    ifMax[nm] = Math.max(ifMax[nm]||1, rx, tx);
+    const mx = ifMax[nm];
+
+    // кешируем данные
+    ifaceData[nm] = d;
+    if (!ifaceMode[nm]) ifaceMode[nm] = 'traffic';
+
+    // ratebar
+    const bw = document.getElementById(`bw-${nm}`);
+    if (bw) bw.innerHTML = `
+      <div class="ratebar">
+        <span class="rate-arrow cg">↓</span>
+        <span class="rate-val cg">${fmtBits(rx)}</span>
+        <div class="rate-bar"><div class="rate-bar-f" style="width:${(rx/mx*100).toFixed(1)}%;background:var(--green)"></div></div>
+        <span class="rate-total">${fmtBytes(brTotal)}</span>
+      </div>
+      <div class="ratebar">
+        <span class="rate-arrow ca">↑</span>
+        <span class="rate-val ca">${fmtBits(tx)}</span>
+        <div class="rate-bar"><div class="rate-bar-f" style="width:${(tx/mx*100).toFixed(1)}%;background:var(--accent)"></div></div>
+        <span class="rate-total">${fmtBytes(bsTotal)}</span>
+      </div>`;
+
+    // Update header rx/tx with first non-loopback interface
+    if (!window._hdrIfSet) {
+      const isLoop = nm === 'lo' || nm.startsWith('loop');
+      if (!isLoop) {
+        window._hdrIfSet = nm;
+        set('h-rx', fmtBits(rx)); set('h-tx', fmtBits(tx));
+        set('h-rx-lbl', nm + ' ↓rx'); set('h-tx-lbl', nm + ' ↑tx');
+      }
+    } else if (nm === window._hdrIfSet) {
+      set('h-rx', fmtBits(rx)); set('h-tx', fmtBits(tx));
+    }
+
+    drawIfaceChart(nm, d, initial);
+  });
+}
+
+function renderWidgets(d){
+  if(!d) return;
+  const sec=document.getElementById('sec-widgets'),wrap=document.getElementById('widgets-wrap');
+  if(!sec||!wrap) return;
+  const has=(d.graphs&&d.graphs.length)||(d.texts&&d.texts.length);
+  if(!has) return;
+  sec.style.display='block';
+
+  (d.graphs||[]).forEach(g=>{
+    const cid='wg-'+g.name.replace(/\W/g,'-');
+    if(!document.getElementById(cid)){
+      const div=document.createElement('div'); div.className='card'; div.id=cid;
+      div.innerHTML=`<div class="card-hd"><span class="card-title">${g.name}</span><span class="card-val" id="${cid}-v">—</span></div><div class="card-body"><div class="ch-wrap"><canvas id="${cid}-ch"></canvas></div></div>`;
+      wrap.appendChild(div);
+    }
+    set(`${cid}-v`,(g.values.at(-1)||0).toFixed(1)+(g.unit?' '+g.unit:''));
+    const ds=[mkDs(g.name,g.values,CC.yellow)];
+    const chid=`${cid}-ch`;
+    if(!charts[chid]){
+      makeChart(chid,ts2lbl(g.timestamps),ds,{unit:'custom'});
+      if(charts[chid]&&g.unit){charts[chid].options.plugins.tooltip.callbacks.label=ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} ${g.unit}`;charts[chid].update('none');}
+    } else updChart(chid,ts2lbl(g.timestamps),ds);
+  });
+
+  (d.texts||[]).forEach(t=>{
+    const cid='wt-'+t.name.replace(/\W/g,'-');
+    if(!document.getElementById(cid)){
+      const div=document.createElement('div'); div.className='card'; div.id=cid;
+      div.innerHTML=`<div class="card-hd"><span class="card-title">${t.name}</span><span class="card-val" id="${cid}-ts">—</span></div><div class="wtext" id="${cid}-out"></div>`;
+      wrap.appendChild(div);
+    }
+    if(t.updated_at) set(`${cid}-ts`,new Date(t.updated_at*1000).toLocaleTimeString());
+    set(`${cid}-out`,t.error?'ERROR: '+t.error:t.output);
+  });
+}
+
+// ══════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════
+function set(id,v){if(v===undefined||v===null)return;const el=document.getElementById(id);if(el)el.textContent=v;}
+function setClass(id,...cls){const el=document.getElementById(id);if(!el)return;el.className=cls.join(' ');}
+function barW(id,pct,color){const el=document.getElementById(id);if(!el)return;el.style.width=Math.max(0,Math.min(100,pct))+'%';if(color)el.style.background=color;}
+function fmtP(v){return(v||0).toFixed(1)+'%';}
+function fmtPMB(pct,bytes){return fmtP(pct)+' ('+fmtBytes(bytes)+')';}
+function fmtBytes(b){if(!b)return'0 B';if(b>=1e9)return(b/1e9).toFixed(1)+' GB';if(b>=1e6)return(b/1e6).toFixed(1)+' MB';if(b>=1e3)return(b/1e3).toFixed(0)+' KB';return b+' B';}
+function fmtNum(n){if(!n||n<1)return'0';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return Math.round(n)+'';}
+function fmtBits(b){if(!b)return'0 bps';if(b>=1e9)return(b/1e9).toFixed(2)+' Gbps';if(b>=1e6)return(b/1e6).toFixed(2)+' Mbps';if(b>=1e3)return(b/1e3).toFixed(1)+' Kbps';return b.toFixed(0)+' bps';}
+function fmtUptime(s){const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);const p=[];if(d)p.push(d+'d');if(h)p.push(h+'h');p.push(m+'m');return p.join(' ');}
+function tsNow(){return new Date().toLocaleTimeString();}
+function setDot(state){
+  const d=document.getElementById('dot');const c=document.getElementById('conn-dot');
+  if(d)d.className='pulse-dot'+(state?' '+state:'');
+  if(c){c.className='sdot';if(state==='ok')c.classList.add('sdot-ok');else if(state==='err')c.classList.add('sdot-err');else if(state==='ld')c.classList.add('sdot-ld');}
+}
+function setStatus(state,txt){set('conn-status',txt);setDot(state);}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5000);}
+
+// ══════════════════════════════════════════════
+// Конфигурация хостов
+// Отредактируйте список ниже — добавьте свои хосты.
+// label — отображаемое имя, url — адрес бэкенда SimpleMon.
+// ══════════════════════════════════════════════
+// url: 'http://host:port'  — прямое подключение к бэкенду
+// url: ''                   — относительные пути (nginx proxy, бэкенд за тем же хостом)
+const HOSTS = [
+  { label: 'localhost',        url: '' },               // nginx proxy / same host
+  // { label: 'direct',        url: 'http://127.0.0.1:8095' },
+  // { label: 'server-prod',   url: 'http://192.168.1.10:8095' },
+  // { label: 'server-backup', url: 'http://192.168.1.11:8095' },
+];
+
+// Apply time range filter to metrics data
+function applyRange(d) {
+  if (!d || timeRange === 0) return d;
+  const pts = Math.ceil(timeRange / backendInterval);
+  function sliceArr(arr) { return arr && arr.length > pts ? arr.slice(-pts) : arr; }
+  const sliceIface = ifd => ({
+    ...ifd,
+    timestamps:    sliceArr(ifd.timestamps),
+    bytes_recv:    sliceArr(ifd.bytes_recv),
+    bytes_sent:    sliceArr(ifd.bytes_sent),
+    packets_recv:  sliceArr(ifd.packets_recv),
+    packets_sent:  sliceArr(ifd.packets_sent),
+    err_in:        sliceArr(ifd.err_in),
+    err_out:       sliceArr(ifd.err_out),
+    rx_rate_bits:  sliceArr(ifd.rx_rate_bits),
+    tx_rate_bits:  sliceArr(ifd.tx_rate_bits),
+  });
+  const ifaces = {};
+  if (d.interfaces) Object.entries(d.interfaces).forEach(([k,v]) => ifaces[k] = sliceIface(v));
+  return {
+    ...d,
+    cpu: { ...d.cpu, timestamps: sliceArr(d.cpu.timestamps), total: sliceArr(d.cpu.total), cores: (d.cpu.cores||[]).map(sliceArr) },
+    ram: { ...d.ram, used_bytes: sliceArr(d.ram.used_bytes), free_bytes: sliceArr(d.ram.free_bytes), used_pct: sliceArr(d.ram.used_pct) },
+    swap: { ...d.swap, used_bytes: sliceArr(d.swap.used_bytes), free_bytes: sliceArr(d.swap.free_bytes), used_pct: sliceArr(d.swap.used_pct) },
+    interfaces: ifaces,
+  };
+}
+
+// Build time range buttons from backend info
+function buildRangeTabs(retentionSecs, intervalSecs) {
+  backendInterval = intervalSecs || 3;
+  const container = document.getElementById('tr-tabs');
+  if (!container) return;
+
+  // Fixed intermediate steps
+  const steps = [];
+  if (retentionSecs > 300)  steps.push(300);   // 5m — always if retention > 5m
+  if (retentionSecs > 60)   steps.push(60);     // 1m — always if retention > 1m
+
+  // Build: all | retention | 5m (if fits) | 1m (if fits) | interval
+  const buttons = [
+    { secs: 0,              label: 'all' },
+    { secs: retentionSecs,  label: fmtRangeLabel(retentionSecs) },
+    ...steps.map(s => ({ secs: s, label: fmtRangeLabel(s) })),
+  ];
+
+  // Deduplicate by secs value
+  const seen = new Set();
+  const unique = buttons.filter(b => {
+    if (seen.has(b.secs)) return false;
+    seen.add(b.secs);
+    return true;
+  });
+
+  container.innerHTML = unique.map(b =>
+    `<button class="ch-tab tr-tab${b.secs === timeRange ? ' active' : ''}"
+      data-secs="${b.secs}" onclick="setRange(${b.secs})">${b.label}</button>`
+  ).join('');
+}
+
+function fmtRangeLabel(secs) {
+  if (secs === 0)   return 'all';
+  if (secs < 60)    return secs + 's';
+  if (secs < 3600)  return (secs / 60) + 'm';
+  return (secs / 3600) + 'h';
+}
+
+function setRange(secs) {
+  timeRange = secs;
+  // update button states
+  document.querySelectorAll('.tr-tab').forEach(b => {
+    b.className = 'ch-tab tr-tab' + (parseInt(b.dataset.secs) === secs ? ' active' : '');
+  });
+  // re-render from full cached data
+  const src = fullData;
+  if (src) renderMetrics(applyRange(src), false);
+}
+
+function initHosts() {
+  // ?api= URL-параметр имеет наивысший приоритет
+  const qp = new URLSearchParams(location.search);
+  if (qp.get('api')) {
+    BASE_URL = qp.get('api').replace(/\/$/,'');
+    renderHostUI([{ label: BASE_URL, url: BASE_URL }], 0, true);
+    connectTo(BASE_URL);
+    return;
+  }
+
+  const active = HOSTS.filter(h => h.url !== undefined && h.url !== null);
+  if (!active.length) {
+    document.getElementById('hdr-right').innerHTML =
+      `<span style="color:var(--red);font-size:11px">Нет хостов в HOSTS[]</span>`;
+    return;
+    return;
+  }
+
+  renderHostUI(active, 0, active.length === 1);
+
+  // Если хост один — подключаемся сразу
+  if (active.length === 1) {
+    connectTo(active[0].url);
+  }
+}
+
+function renderHostUI(hosts, selectedIdx, autoConnect) {
+  const el = document.getElementById('hdr-right');
+  if (autoConnect && hosts.length === 1) {
+    // Один хост — просто показываем имя
+    el.innerHTML = `<span class="host-label">${hosts[0].label}${hosts[0].url===''?' (proxy)':''}</span>`;
+    return;
+  }
+  // Несколько хостов — select + кнопка
+  const opts = hosts.map((h,i) =>
+    `<option value="${h.url}" ${i===selectedIdx?'selected':''}>${h.label}</option>`
+  ).join('');
+  el.innerHTML = `
+    <select class="host-select" id="host-sel">${opts}</select>
+    <button class="btn btn-primary" onclick="connectTo(document.getElementById('host-sel').value)">Connect</button>
+  `;
+}
+
+function connectTo(url) {
+  document.getElementById('api-url-val').textContent = url || '(proxy)';
+  BASE_URL = (url || '').replace(/\/$/,'');
+  connectReal();
+}
+
+// Скрытый элемент для хранения текущего URL (используется в connectReal)
+document.addEventListener('DOMContentLoaded', ()=>{});
+
+initHosts();
+</script>
+</body>
+</html>

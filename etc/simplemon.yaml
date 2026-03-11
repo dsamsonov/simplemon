@@ -1,0 +1,46 @@
+# simplemon configuration file
+# Default location: /etc/simplemon/simplemon.yaml
+
+listen:
+  address: "127.0.0.1"   # IP to bind (use 0.0.0.0 for all interfaces)
+  port: 8095
+
+interfaces:
+  include:
+    - ".*"               # monitor all interfaces (regexp)
+    # - "eth.*"          # or only ethX interfaces
+    # - "ens.*"
+    # - "^lo$"           # loopback by exact name
+
+collector:
+  interval_seconds: 3    # collect every N seconds
+  retention_seconds: 1800  # keep 30 minutes of history (1800/3 = 600 data points)
+
+# Custom widgets (optional)
+widgets:
+  - name: "Open file descriptors"
+    type: graph
+    command: "cat /proc/sys/fs/file-nr | awk '{print $1}'"
+    interval_seconds: 5
+    unit: "fd"
+
+  - name: "Disk usage"
+    type: text
+    command: "df -h"
+
+# Examples (uncomment to use):
+#
+#   - name: "CPU temperature"
+#     type: graph
+#     command: "sensors | grep 'Core 0' | awk '{print $3}' | tr -d '+°C'"
+#     interval_seconds: 5
+#     unit: "°C"
+#
+#   - name: "nginx status"
+#     type: text
+#     command: "systemctl status nginx"
+#
+#   - name: "top processes"
+#     type: text
+#     command: "ps aux --sort=-%cpu | head -10"
+#     interval_seconds: 10

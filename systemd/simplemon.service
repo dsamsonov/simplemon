@@ -1,0 +1,36 @@
+[Unit]
+Description=SimpleMon – lightweight system monitoring daemon
+Documentation=https://github.com/simplemon
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=simplemon
+Group=simplemon
+
+# Binary installed to /usr/local/bin/simplemon
+ExecStart=/usr/local/bin/simplemon -config /etc/simplemon/simplemon.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=on-failure
+RestartSec=5s
+
+# Logging – journald by default
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=simplemon
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/etc/simplemon
+CapabilityBoundingSet=
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

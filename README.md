@@ -35,7 +35,8 @@ simplemon/
 ├── etc/simplemon.yaml             # конфиг по умолчанию
 ├── systemd/simplemon.service      # systemd unit
 ├── html
-|   ├── simplemon.html             # фронтенд
+│   ├── simplemon.html             # фронтенд
+│   └── chart.umd.min.js
 ├── Makefile
 └── go.mod
 ```

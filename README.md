@@ -36,7 +36,6 @@ simplemon/
 ├── systemd/simplemon.service      # systemd unit
 ├── html
 │   ├── simplemon.html             # фронтенд
-│   └── chart.umd.min.js
 ├── Makefile
 └── go.mod
 ```

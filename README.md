@@ -34,7 +34,8 @@ simplemon/
 │   └── widget/                    # кастомные виджеты
 ├── etc/simplemon.yaml             # конфиг по умолчанию
 ├── systemd/simplemon.service      # systemd unit
-├── simplemon.html                 # фронтенд (один файл)
+├── html
+|   ├── simplemon.html             # фронтенд
 ├── Makefile
 └── go.mod
 ```

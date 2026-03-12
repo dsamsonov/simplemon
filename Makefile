@@ -1,71 +1,157 @@
-BINARY     := simplemon
-VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "1.0.0")
-BUILD_DIR  := ./bin
-MAIN       := .
-LDFLAGS    := -ldflags="-s -w -X main.version=$(VERSION)"
+# =============================================================================
+# Makefile — SimpleMon
+# =============================================================================
 
-INSTALL_BIN  := /usr/local/bin/$(BINARY)
-INSTALL_CFG  := /etc/simplemon/simplemon.yaml
-SYSTEMD_UNIT := /etc/systemd/system/simplemon.service
-SYSUSER      := simplemon
+BINARY      := simplemon
+# Raw version from git — normalization (1.0.0~ prefix) is handled inside build-deb.sh / build-tar.sh
+VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+LDFLAGS     := -s -w -X main.Version=$(VERSION)
+BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build clean vet test install uninstall
+PREFIX      ?= /usr/local
+BINDIR      := $(PREFIX)/bin
+CONFDIR     := /etc/$(BINARY)
+HTMLDIR     := /var/www/$(BINARY)
+SYSTEMDDIR  := /lib/systemd/system
 
-all: build
+DIST_DIR    := dist
 
-build:
-	mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) $(MAIN)
-	@echo "Built: $(BUILD_DIR)/$(BINARY)  (version: $(VERSION))"
+.DEFAULT_GOAL := build
 
-clean:
-	rm -rf $(BUILD_DIR)
+# ---------- build ------------------------------------------------------------
 
-vet:
+.PHONY: build
+build:  ## Build binary for the current platform
+	@mkdir -p bin
+	CGO_ENABLED=0 go build $(BUILD_FLAGS) -o bin/$(BINARY) .
+	@echo "Done: bin/$(BINARY)"
+
+.PHONY: build-all
+build-all: build-amd64 build-arm64 build-armhf  ## Build binaries for all architectures
+
+.PHONY: build-amd64
+build-amd64:  ## Build for amd64
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(BUILD_FLAGS) -o bin/$(BINARY)-amd64 .
+
+.PHONY: build-arm64
+build-arm64:  ## Build for arm64
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(BUILD_FLAGS) -o bin/$(BINARY)-arm64 .
+
+.PHONY: build-armhf
+build-armhf:  ## Build for armhf (ARM 32-bit v7)
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(BUILD_FLAGS) -o bin/$(BINARY)-armhf .
+
+# ---------- deb packages -----------------------------------------------------
+
+.PHONY: deb
+deb:  ## Build .deb packages for all architectures (amd64, arm64, armhf)
+	@chmod +x build-deb.sh
+	VERSION=$(VERSION) ./build-deb.sh
+
+.PHONY: deb-amd64
+deb-amd64:  ## Build .deb for amd64 only
+	@chmod +x build-deb.sh
+	VERSION=$(VERSION) ./build-deb.sh amd64
+
+.PHONY: deb-arm64
+deb-arm64:  ## Build .deb for arm64 only
+	@chmod +x build-deb.sh
+	VERSION=$(VERSION) ./build-deb.sh arm64
+
+.PHONY: deb-armhf
+deb-armhf:  ## Build .deb for armhf only
+	@chmod +x build-deb.sh
+	VERSION=$(VERSION) ./build-deb.sh armhf
+
+# ---------- tar.gz archives --------------------------------------------------
+
+.PHONY: tar
+tar:  ## Build .tar.gz archives for all architectures (amd64, arm64, armhf)
+	@chmod +x build-tar.sh
+	VERSION=$(VERSION) ./build-tar.sh
+
+.PHONY: tar-amd64
+tar-amd64:  ## Build .tar.gz for amd64 only
+	@chmod +x build-tar.sh
+	VERSION=$(VERSION) ./build-tar.sh amd64
+
+.PHONY: tar-arm64
+tar-arm64:  ## Build .tar.gz for arm64 only
+	@chmod +x build-tar.sh
+	VERSION=$(VERSION) ./build-tar.sh arm64
+
+.PHONY: tar-armhf
+tar-armhf:  ## Build .tar.gz for armhf only
+	@chmod +x build-tar.sh
+	VERSION=$(VERSION) ./build-tar.sh armhf
+
+.PHONY: dist
+dist: deb tar  ## Build all release artifacts (.deb + .tar.gz) for all architectures
+
+# ---------- install (from source) --------------------------------------------
+
+.PHONY: install
+install: build  ## Install from source (requires sudo)
+	install -Dm 0755 bin/$(BINARY) $(DESTDIR)$(BINDIR)/$(BINARY)
+	install -d $(DESTDIR)$(CONFDIR)
+	install -Dm 0640 etc/$(BINARY).yaml $(DESTDIR)$(CONFDIR)/$(BINARY).yaml
+	install -Dm 0644 systemd/$(BINARY).service $(DESTDIR)$(SYSTEMDDIR)/$(BINARY).service
+	install -d $(DESTDIR)$(HTMLDIR)
+	install -Dm 0644 html/$(BINARY).html $(DESTDIR)$(HTMLDIR)/$(BINARY).html
+	@if ! id $(BINARY) >/dev/null 2>&1; then \
+		useradd --system --no-create-home --shell /usr/sbin/nologin \
+			--comment "SimpleMon monitoring daemon" $(BINARY); \
+	fi
+	chown root:$(BINARY) $(DESTDIR)$(CONFDIR)/$(BINARY).yaml
+	systemctl daemon-reload
+	systemctl enable --now $(BINARY)
+	@echo ""
+	@echo "Installed. API: http://127.0.0.1:8095/health"
+
+.PHONY: uninstall
+uninstall:  ## Uninstall (requires sudo)
+	-systemctl stop $(BINARY)
+	-systemctl disable $(BINARY)
+	rm -f $(BINDIR)/$(BINARY)
+	rm -f $(SYSTEMDDIR)/$(BINARY).service
+	rm -rf $(CONFDIR)
+	rm -rf $(HTMLDIR)
+	-userdel $(BINARY) 2>/dev/null
+	systemctl daemon-reload
+	@echo "Uninstalled."
+
+# ---------- development ------------------------------------------------------
+
+.PHONY: run
+run:  ## Run locally as the current user
+	go run . -config etc/$(BINARY).yaml
+
+.PHONY: test
+test:  ## Run tests
+	go test ./...
+
+.PHONY: vet
+vet:  ## Run static analysis
 	go vet ./...
 
-test:
-	go test -race ./...
+.PHONY: tidy
+tidy:  ## Run go mod tidy
+	go mod tidy
 
-# --------------------------------------------------------------------------
-# install – requires root (sudo make install)
-# --------------------------------------------------------------------------
-install: build
-	@echo "==> Creating system user '$(SYSUSER)'..."
-	id -u $(SYSUSER) >/dev/null 2>&1 || \
-	  useradd --system --no-create-home --shell /usr/sbin/nologin \
-	          --comment "SimpleMon monitoring daemon" $(SYSUSER)
+# ---------- clean ------------------------------------------------------------
 
-	@echo "==> Installing binary -> $(INSTALL_BIN)"
-	install -m 0755 $(BUILD_DIR)/$(BINARY) $(INSTALL_BIN)
+.PHONY: clean
+clean:  ## Remove build artifacts
+	rm -rf bin/ build/ $(DIST_DIR)/
 
-	@echo "==> Installing config -> $(INSTALL_CFG)"
-	mkdir -p /etc/simplemon
-	@if [ ! -f $(INSTALL_CFG) ]; then \
-	  install -m 0640 -o root -g $(SYSUSER) etc/simplemon.yaml $(INSTALL_CFG); \
-	  echo "    Config installed. Review $(INSTALL_CFG) before starting."; \
-	else \
-	  echo "    Config already exists, skipping."; \
-	fi
+.PHONY: help
+help:  ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-	@echo "==> Installing systemd unit -> $(SYSTEMD_UNIT)"
-	install -m 0644 systemd/simplemon.service $(SYSTEMD_UNIT)
-	systemctl daemon-reload
-
-	@echo ""
-	@echo "Done. Next steps:"
-	@echo "  sudo systemctl enable --now simplemon"
-	@echo "  systemctl status simplemon"
-
-# --------------------------------------------------------------------------
-# uninstall – requires root (sudo make uninstall)
-# --------------------------------------------------------------------------
-uninstall:
-	systemctl stop simplemon    2>/dev/null || true
-	systemctl disable simplemon 2>/dev/null || true
-	rm -f $(SYSTEMD_UNIT)
-	systemctl daemon-reload
-	rm -f $(INSTALL_BIN)
-	rm -rf /etc/simplemon
-	userdel $(SYSUSER) 2>/dev/null || true
-	@echo "Uninstalled."
+.PHONY: version
+version:  ## Print current version
+	@echo $(VERSION)

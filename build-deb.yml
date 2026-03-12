@@ -1,0 +1,134 @@
+name: Build release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (without v, e.g. 1.2.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # needed to create releases and upload assets
+
+jobs:
+  build:
+    name: Build packages (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64, armhf]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed for git describe
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      # arm64/armhf cross-compilation does not require extra toolchains
+      # because CGO_ENABLED=0; dpkg-deb/fakeroot are only needed for .deb
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            fakeroot dpkg
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VER="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VER="${GITHUB_REF#refs/tags/v}"
+          else
+            VER=$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "0.0.0-dev")
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VER}"
+
+      - name: Build DEB package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          chmod +x build-deb.sh
+          ./build-deb.sh ${{ matrix.arch }}
+
+      - name: Build TAR.GZ archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          chmod +x build-tar.sh
+          ./build-tar.sh ${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplemon-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only on tag push
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: List packages
+        run: ls -lh dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SimpleMon ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## Installation
+
+            ### Via .deb package (Debian / Ubuntu)
+
+            ```bash
+            # amd64 (x86_64)
+            sudo dpkg -i simplemon_*_amd64.deb
+
+            # ARM 64-bit (Raspberry Pi 4, modern ARM servers)
+            sudo dpkg -i simplemon_*_arm64.deb
+
+            # ARM 32-bit (Raspberry Pi 2/3, armv7)
+            sudo dpkg -i simplemon_*_armhf.deb
+            ```
+
+            ### Via .tar.gz archive (any Linux distro)
+
+            ```bash
+            tar -xzf simplemon-*-linux-amd64.tar.gz
+            sudo ./simplemon-*-linux-amd64/install.sh
+            ```
+
+            After installation:
+            ```bash
+            systemctl status simplemon
+            curl http://127.0.0.1:8095/health
+            ```

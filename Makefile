@@ -3,7 +3,6 @@
 # =============================================================================
 
 BINARY      := simplemon
-# Raw version from git — normalization (1.0.0~ prefix) is handled inside build-deb.sh / build-tar.sh
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "0.0.0")
 LDFLAGS     := -s -w -X main.Version=$(VERSION)
 BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
@@ -101,6 +100,13 @@ install: build  ## Install from source (requires sudo)
 	install -Dm 0644 systemd/$(BINARY).service $(DESTDIR)$(SYSTEMDDIR)/$(BINARY).service
 	install -d $(DESTDIR)$(HTMLDIR)
 	install -Dm 0644 html/$(BINARY).html $(DESTDIR)$(HTMLDIR)/$(BINARY).html
+	@# Install frontend config only if it does not already exist (preserve user settings)
+	@if [ ! -f $(DESTDIR)$(HTMLDIR)/$(BINARY).config.js ]; then \
+		install -Dm 0644 html/$(BINARY).config.js $(DESTDIR)$(HTMLDIR)/$(BINARY).config.js; \
+		echo "Installed frontend config: $(DESTDIR)$(HTMLDIR)/$(BINARY).config.js"; \
+	else \
+		echo "Frontend config already exists, skipping: $(DESTDIR)$(HTMLDIR)/$(BINARY).config.js"; \
+	fi
 	@if ! id $(BINARY) >/dev/null 2>&1; then \
 		useradd --system --no-create-home --shell /usr/sbin/nologin \
 			--comment "SimpleMon monitoring daemon" $(BINARY); \

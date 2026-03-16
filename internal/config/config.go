@@ -17,21 +17,19 @@ type Config struct {
 	Widgets    []WidgetConfig   `yaml:"widgets"`
 }
 
-// WidgetType defines how the widget output is handled.
 type WidgetType string
 
 const (
-	WidgetTypeGraph WidgetType = "graph" // parse first line as float64, store in ring buffer
-	WidgetTypeText  WidgetType = "text"  // store full output (up to 200 lines)
+	WidgetTypeGraph WidgetType = "graph"
+	WidgetTypeText  WidgetType = "text"
 )
 
-// WidgetConfig describes a single user-defined widget.
 type WidgetConfig struct {
-	Name            string     `yaml:"name"`             // display name
-	Type            WidgetType `yaml:"type"`             // "graph" or "text"
-	Command         string     `yaml:"command"`          // shell command to execute
-	IntervalSeconds int        `yaml:"interval_seconds"` // 0 = use collector interval
-	Unit            string     `yaml:"unit"`             // optional, e.g. "°C", "MB/s"
+	Name            string     `yaml:"name"`
+	Type            WidgetType `yaml:"type"`
+	Command         string     `yaml:"command"`
+	IntervalSeconds int        `yaml:"interval_seconds"`
+	Unit            string     `yaml:"unit"`
 }
 
 type ListenConfig struct {
@@ -40,7 +38,7 @@ type ListenConfig struct {
 }
 
 type InterfacesConfig struct {
-	Include []string `yaml:"include"` // literal names or regexp patterns
+	Include []string `yaml:"include"`
 }
 
 type CollectorConfig struct {
@@ -74,11 +72,11 @@ func defaultConfig() *Config {
 			Port:    8095,
 		},
 		Interfaces: InterfacesConfig{
-			Include: []string{".*"}, // all by default
+			Include: []string{".*"},
 		},
 		Collector: CollectorConfig{
 			IntervalSeconds: 3,
-			RetentionSecs:   1800, // 30 minutes
+			RetentionSecs:   1800,
 		},
 	}
 }
@@ -115,12 +113,10 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// ListenAddr returns "address:port" string.
 func (c *Config) ListenAddr() string {
 	return fmt.Sprintf("%s:%d", c.Listen.Address, c.Listen.Port)
 }
 
-// MatchInterface returns true if ifname matches any of the configured patterns.
 func (c *Config) MatchInterface(ifname string) bool {
 	for _, pat := range c.Interfaces.Include {
 		re := regexp.MustCompile(pat)

@@ -12,7 +12,7 @@ on:
         default: ''
 
 permissions:
-  contents: write   # needed to create releases and upload assets
+  contents: write
 
 jobs:
   build:
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # needed for git describe
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -34,8 +34,6 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      # arm64/armhf cross-compilation does not require extra toolchains
-      # because CGO_ENABLED=0; dpkg-deb/fakeroot are only needed for .deb
       - name: Install build tools
         run: |
           sudo apt-get update -qq
@@ -80,7 +78,6 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    # Only on tag push
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
@@ -110,13 +107,8 @@ jobs:
             ### Via .deb package (Debian / Ubuntu)
 
             ```bash
-            # amd64 (x86_64)
             sudo dpkg -i simplemon_*_amd64.deb
-
-            # ARM 64-bit (Raspberry Pi 4, modern ARM servers)
             sudo dpkg -i simplemon_*_arm64.deb
-
-            # ARM 32-bit (Raspberry Pi 2/3, armv7)
             sudo dpkg -i simplemon_*_armhf.deb
             ```
 

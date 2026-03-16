@@ -11,8 +11,10 @@
 #   ├── systemd/
 #   │   └── simplemon.service      # systemd unit
 #   ├── html/
-#   │   └── simplemon.html         # web frontend
+#   │   ├── simplemon.html         # web frontend
+#   │   └── simplemon.config.js    # frontend hosts config (preserved on update)
 #   ├── install.sh                 # one-shot install script
+#   ├── uninstall.sh               # uninstall script
 #   └── README.txt                 # quick-start instructions
 #
 # Usage:
@@ -144,7 +146,7 @@ fi
 install -Dm 0755 "${SCRIPT_DIR}/bin/${BINARY_NAME}" "${BINDIR}/${BINARY_NAME}"
 echo "  [ok] Binary installed: ${BINDIR}/${BINARY_NAME}"
 
-# Install config (skip if already exists to preserve user changes)
+# Install backend config (skip if already exists to preserve user changes)
 if [ ! -f "${CONFDIR}/${BINARY_NAME}.yaml" ]; then
     install -d "${CONFDIR}"
     install -m 0640 "${SCRIPT_DIR}/etc/${BINARY_NAME}.yaml" \
@@ -160,11 +162,20 @@ install -Dm 0644 "${SCRIPT_DIR}/systemd/${BINARY_NAME}.service" \
     "${SYSTEMDDIR}/${BINARY_NAME}.service"
 echo "  [ok] Systemd unit installed: ${SYSTEMDDIR}/${BINARY_NAME}.service"
 
-# Install HTML frontend
+# Install HTML frontend (always updated)
 install -d "${HTMLDIR}"
 install -m 0644 "${SCRIPT_DIR}/html/${BINARY_NAME}.html" \
     "${HTMLDIR}/${BINARY_NAME}.html"
 echo "  [ok] Frontend installed: ${HTMLDIR}/${BINARY_NAME}.html"
+
+# Install frontend hosts config (skip if already exists to preserve user settings)
+if [ ! -f "${HTMLDIR}/${BINARY_NAME}.config.js" ]; then
+    install -m 0644 "${SCRIPT_DIR}/html/${BINARY_NAME}.config.js" \
+        "${HTMLDIR}/${BINARY_NAME}.config.js"
+    echo "  [ok] Frontend config installed: ${HTMLDIR}/${BINARY_NAME}.config.js"
+else
+    echo "  [--] Frontend config already exists, skipping: ${HTMLDIR}/${BINARY_NAME}.config.js"
+fi
 
 # Enable and start service
 systemctl daemon-reload
@@ -176,6 +187,7 @@ echo "  SimpleMon installed and running."
 echo "  Frontend: ${HTMLDIR}/${BINARY_NAME}.html"
 echo "  API:      http://127.0.0.1:8095/health"
 echo "  Config:   ${CONFDIR}/${BINARY_NAME}.yaml"
+echo "  Hosts:    ${HTMLDIR}/${BINARY_NAME}.config.js"
 echo "  Logs:     journalctl -u ${BINARY_NAME} -f"
 echo ""
 EOF
@@ -244,6 +256,10 @@ Quick uninstall
 ---------------
   sudo ./uninstall.sh
 
+After install, edit the frontend hosts config if needed:
+  /var/www/simplemon/simplemon.config.js
+This file is NOT overwritten on update.
+
 Manual install
 --------------
   # 1. Create system user
@@ -253,7 +269,7 @@ Manual install
   # 2. Install binary
   sudo install -Dm 0755 bin/simplemon /usr/local/bin/simplemon
 
-  # 3. Install config
+  # 3. Install backend config
   sudo mkdir -p /etc/simplemon
   sudo install -m 0640 etc/simplemon.yaml /etc/simplemon/simplemon.yaml
   sudo chown root:simplemon /etc/simplemon/simplemon.yaml
@@ -265,6 +281,7 @@ Manual install
   # 5. Install frontend
   sudo mkdir -p /var/www/simplemon
   sudo install -m 0644 html/simplemon.html /var/www/simplemon/simplemon.html
+  sudo install -m 0644 html/simplemon.config.js /var/www/simplemon/simplemon.config.js
 
   # 6. Start
   sudo systemctl enable --now simplemon
@@ -277,8 +294,9 @@ Verify
 
 Config
 ------
-  /etc/simplemon/simplemon.yaml
-  sudo systemctl restart simplemon   # apply changes
+  /etc/simplemon/simplemon.yaml       — backend config
+  /var/www/simplemon/simplemon.config.js — frontend hosts (edit to add servers)
+  sudo systemctl restart simplemon   # apply backend config changes
 
 Homepage
 --------
@@ -305,7 +323,7 @@ build_tar() {
     # Binary
     install -m 0755 "$bin_path"              "${stage_dir}/bin/${BINARY_NAME}"
 
-    # Config
+    # Backend config
     install -m 0644 "etc/simplemon.yaml"     "${stage_dir}/etc/simplemon.yaml"
 
     # Systemd unit
@@ -313,6 +331,9 @@ build_tar() {
 
     # HTML frontend
     install -m 0644 "html/simplemon.html"    "${stage_dir}/html/simplemon.html"
+
+    # Frontend hosts config
+    install -m 0644 "html/simplemon.config.js" "${stage_dir}/html/simplemon.config.js"
 
     # Helper scripts
     write_install_script   "${stage_dir}/install.sh"

@@ -84,14 +84,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // InfoPayload contains data that does not change frequently.
 type InfoPayload struct {
-	CollectedAt        int64                          `json:"collected_at"`
-	BackendUptimeSecs  float64                        `json:"backend_uptime_seconds"` // time since simplemon started
-	SystemUptimeSecs   uint64                         `json:"system_uptime_seconds"`
-	IntervalSecs       int                            `json:"interval_secs"`
-	RetentionSecs      int                            `json:"retention_seconds"`
-	BufSize            int                            `json:"buf_size"`
-	NumCPUCores        int                            `json:"num_cpu_cores"`
-	Interfaces         map[string]collector.IfaceInfo `json:"interfaces"`
+	CollectedAt       int64                          `json:"collected_at"`
+	BackendUptimeSecs float64                        `json:"backend_uptime_seconds"` // time since simplemon started
+	SystemUptimeSecs  uint64                         `json:"system_uptime_seconds"`
+	IntervalSecs      int                            `json:"interval_secs"`
+	RetentionSecs     int                            `json:"retention_seconds"`
+	BufSize           int                            `json:"buf_size"`
+	NumCPUCores       int                            `json:"num_cpu_cores"`
+	Interfaces        map[string]collector.IfaceInfo `json:"interfaces"`
+	InterfaceOrder    []string                       `json:"interface_order"` // display order for frontend
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +103,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	sysUptime, _ := collector.GetSystemUptime()
 	ifInfos, _ := collector.GetIfaceInfo(s.cfg.MatchInterface)
+	order := collector.GetInterfaceOrder(s.cfg)
 	m := s.collector.Metrics()
 
 	p := InfoPayload{
@@ -113,6 +115,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		BufSize:           s.cfg.Collector.RetentionSecs / s.cfg.Collector.IntervalSeconds,
 		NumCPUCores:       m.NumCores,
 		Interfaces:        ifInfos,
+		InterfaceOrder:    order,
 	}
 
 	writeJSON(w, p)
@@ -122,18 +125,20 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 // /metrics  – time-series data
 //
 // Query params:
-//   ?points=N   return last N samples per counter (default 20, 0 = full history)
+//
+//	?points=N   return last N samples per counter (default 20, 0 = full history)
+//
 // -------------------------------------------------------------------
 
 // MetricsPayload is the time-series JSON object.
 type MetricsPayload struct {
-	CollectedAt       int64                      `json:"collected_at"`
-	BackendUptimeSecs float64                    `json:"backend_uptime_seconds"`
-	Points            int                        `json:"points"`     // actual number of points returned
-	CPU               CPUPayload                 `json:"cpu"`
-	RAM               MemPayload                 `json:"ram"`
-	Swap              MemPayload                 `json:"swap"`
-	Interfaces        map[string]IfacePayload    `json:"interfaces"`
+	CollectedAt       int64                   `json:"collected_at"`
+	BackendUptimeSecs float64                 `json:"backend_uptime_seconds"`
+	Points            int                     `json:"points"`     // actual number of points returned
+	CPU               CPUPayload              `json:"cpu"`
+	RAM               MemPayload              `json:"ram"`
+	Swap              MemPayload              `json:"swap"`
+	Interfaces        map[string]IfacePayload `json:"interfaces"`
 }
 
 type CPUPayload struct {
@@ -249,21 +254,15 @@ func (s *Server) buildMetrics(points int) *MetricsPayload {
 // -------------------------------------------------------------------
 
 // snapSlice returns the last n samples from ring respecting actual fill level.
-// When the buffer is not yet full, data lives in [0..fill-1]; we take the
-// last n of those filled slots so we never return trailing zeros.
 func snapSlice(r *ringbuf.Ring, n int) []ringbuf.Sample {
 	all := r.Snapshot()
 	fill := r.Fill()
-	// Clamp to how many samples actually exist
 	if n > fill {
 		n = fill
 	}
 	if n <= 0 {
 		return nil
 	}
-	// Data is in all[0..fill-1] when not full, or rotated when full.
-	// Snapshot() already returns chronological order, so filled data is
-	// always in all[0..fill-1] when not full, and all[0..size-1] when full.
 	src := all[:fill]
 	if n >= fill {
 		return src
@@ -292,7 +291,6 @@ func snapTimestamps(r *ringbuf.Ring, n int) []int64 {
 }
 
 // roundSlice rounds every value to prec decimal places.
-// prec=0 returns integer-valued float64 (no decimals in JSON).
 func roundSlice(in []float64, prec int) []float64 {
 	if prec < 0 {
 		return in
@@ -345,14 +343,13 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
 // -------------------------------------------------------------------
 // /widgets
 // -------------------------------------------------------------------
 
 // WidgetsPayload is the top-level response for /widgets.
 type WidgetsPayload struct {
-	CollectedAt int64               `json:"collected_at"`
+	CollectedAt int64                `json:"collected_at"`
 	Graphs      []GraphWidgetPayload `json:"graphs"`
 	Texts       []TextWidgetPayload  `json:"texts"`
 }

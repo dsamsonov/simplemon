@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- SimpleMon frontend v1.0.0 -->
+<!-- SimpleMon frontend v1.0.1 -->
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SimpleMon v1.0.0</title>
+<title>SimpleMon v1.0.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Syne:wght@400;600;800&display=swap');
@@ -176,7 +176,6 @@ main {
 .itag-dn { background:#fef2f2; color:var(--red); }
 
 /* unified interface rows */
-/* interface info grid — одинаковые метки слева, значения справа */
 .iface-grid { display:table; width:100%; border-spacing:0; }
 .iface-row  { display:table-row; }
 .iface-row + .iface-row .ik,
@@ -196,7 +195,7 @@ main {
 }
 .ip-list { display:flex; flex-direction:column; gap:1px; }
 
-/* rate rows — фиксированные колонки */
+/* rate rows */
 .rateblock { margin-top:8px; }
 .ratebar {
   display:grid;
@@ -325,6 +324,8 @@ main {
 <span id="api-url-val" style="display:none"></span>
 <div class="toast" id="toast"></div>
 
+<!-- External config: hosts list. Edit simplemon.config.js — it won't be overwritten on update. -->
+<script src="simplemon.config.js"></script>
 <script>
 // ══════════════════════════════════════════════
 // Chart.js defaults
@@ -335,13 +336,21 @@ Chart.defaults.font.family = "'JetBrains Mono', monospace";
 Chart.defaults.font.size = 10;
 
 // ══════════════════════════════════════════════
+// Hosts — loaded from simplemon.config.js
+// Falls back to localhost proxy if config file is missing or malformed.
+// ══════════════════════════════════════════════
+const HOSTS = (typeof SIMPLEMON_CONFIG !== 'undefined' && SIMPLEMON_CONFIG.hosts && SIMPLEMON_CONFIG.hosts.length)
+  ? SIMPLEMON_CONFIG.hosts
+  : [{ label: 'localhost', url: '' }];
+
+// ══════════════════════════════════════════════
 // App state
 // ══════════════════════════════════════════════
 let realMode=false, realTmr=null, realInfoTmr=null;
 let BASE_URL='', charts={}, ifMax={};
 let ifBuilt=false, coresBuilt=false;
 let timeRange=0;
-const memBytes={}; // stores used_bytes arrays for RAM/Swap tooltips // 0=all, N=last N seconds — set by range buttons
+const memBytes={}; // stores used_bytes arrays for RAM/Swap tooltips
 let fullData=null, lastData=null; // cached responses
 let backendInterval=3; // interval_secs from /info
 
@@ -351,15 +360,13 @@ let backendInterval=3; // interval_secs from /info
 function stopReal(){ realMode=false; clearInterval(realTmr); realTmr=null; clearInterval(realInfoTmr); realInfoTmr=null; window._hdrIfSet=null; }
 
 async function connectReal() {
-  const url = BASE_URL; // may be empty string for proxy mode
+  const url = BASE_URL;
   stopReal();
   ifBuilt=false; coresBuilt=false;
   buildUI(); setDot('ld'); setStatus('ld','Connecting…');
   try {
-    // Liveness check первым
     await apiFetch('/health');
 
-    // Начальная загрузка: /info + /metrics/full + /widgets одновременно
     const [info,full,wids]=await Promise.all([
       apiFetch('/info'),
       apiFetch('/metrics/full'),
@@ -369,10 +376,8 @@ async function connectReal() {
     renderInfo(info); renderMetrics(applyRange(full),true); if(wids) renderWidgets(wids);
     setDot('on'); setStatus('ok','Connected · '+tsNow()); realMode=true;
 
-    // Интервал из бэкенда, fallback 3s, минимум 1s
     const ivl=Math.max(1000,(info.interval_secs||3)*1000);
 
-    // /metrics/last + /widgets каждые interval_secs
     realTmr=setInterval(async()=>{
       try {
         const [last,w]=await Promise.all([
@@ -385,11 +390,9 @@ async function connectReal() {
       } catch(e){ setStatus('err','Poll error: '+e.message); }
     },ivl);
 
-    // /info раз в минуту — полный рендер (интерфейсы, ядра, аптайм)
     realInfoTmr=setInterval(async()=>{
       try {
         const i=await apiFetch('/info');
-        // Обновляем только скалярные поля — интерфейсы уже построены
         set('sys-uptime',fmtUptime(i.system_uptime_seconds));
         set('be-uptime', fmtUptime(i.backend_uptime_seconds));
         set('h-up', fmtUptime(i.system_uptime_seconds));
@@ -403,34 +406,21 @@ async function connectReal() {
 }
 
 
-// Merge fresh /metrics/last points into fullData, keeping ring structure.
-// Simply appends new points that are newer than the last timestamp in fullData.
+// Merge fresh /metrics/last points into fullData
 function mergeLastIntoFull(full, last) {
   if (!full || !last) return last;
 
-  function mergeArrays(oldArr, newArr) {
-    if (!oldArr || !newArr || !newArr.length) return oldArr || newArr;
-    // newArr already contains the last N points from the ring.
-    // Find how many of them are new (timestamp > last in oldArr).
-    const lastTs = oldArr[oldArr.length - 1];
-    const firstNew = newArr.findIndex(v => v === undefined ? false : true); // always 0
-    // For timestamp arrays we compare values; for value arrays we just append same count.
-    return oldArr; // placeholder, see below
-  }
-
-  // Use timestamps to find new points
   const oldTs = full.cpu.timestamps;
   const newTs = last.cpu.timestamps;
   if (!oldTs || !newTs || !newTs.length) return full;
 
   const lastOldTs = oldTs[oldTs.length - 1] || 0;
-  // Find index in newTs where timestamps become newer than lastOldTs
   let cutIdx = 0;
   for (let i = 0; i < newTs.length; i++) {
     if (newTs[i] > lastOldTs) { cutIdx = i; break; }
-    cutIdx = newTs.length; // all already seen
+    cutIdx = newTs.length;
   }
-  if (cutIdx >= newTs.length) return full; // nothing new
+  if (cutIdx >= newTs.length) return full;
 
   function appendSlice(oldArr, newArr) {
     if (!oldArr || !newArr) return oldArr || newArr || [];
@@ -449,9 +439,6 @@ function mergeLastIntoFull(full, last) {
       iCut = iTs.length;
     }
     if (iCut >= iTs.length) return oldIf;
-    const ap = arr => arr ? [...arr, ...arr.slice(iCut)] : arr;
-    // reuse cutIdx-equivalent for iface
-    const apI = arr => arr ? [...arr, ...(arr.slice ? newIf[Object.keys(newIf).find(k=>newIf[k]===arr)]||[] : []).slice(iCut)] : arr;
     return {
       ...oldIf,
       timestamps:   [...oldIf.timestamps,   ...newIf.timestamps.slice(iCut)],
@@ -675,7 +662,13 @@ function renderInfo(d){
   const container=document.getElementById('iface-info');
   if(!container||ifBuilt) return;
   ifBuilt=true;
-  const ifaces=d.interfaces||{}, names=Object.keys(ifaces);
+
+  const ifaces=d.interfaces||{};
+  // Use interface_order from backend if available, otherwise fall back to sorted keys.
+  const names=(d.interface_order && d.interface_order.length)
+    ? d.interface_order.filter(n => ifaces[n])
+    : Object.keys(ifaces).sort();
+
   if(!names.length) return;
 
   container.innerHTML=names.map(n=>{const f=ifaces[n]; return `
@@ -746,7 +739,6 @@ function renderMetrics(d,initial){
   const swpDs=[mkDs('Swap %',d.swap.used_pct,CC.purple)];
   memBytes['swap']=d.swap.used_bytes;
   if(initial) makeChart('ch-swp',lbls,swpDs,{yMax:100,unit:'swap'}); else updChart('ch-swp',lbls,swpDs);
-  const swpUsedVal=d.swap.used_bytes.at(-1)||0, swpFreeVal=d.swap.free_bytes.at(-1)||0;
 
   renderIfaces(d.interfaces,initial);
 }
@@ -777,18 +769,14 @@ const ifaceData = {};
 
 function setIfaceMode(nm, mode) {
   ifaceMode[nm] = mode;
-  // переключаем активный таб
   ['traffic','packets','errors'].forEach(m => {
     const t = document.getElementById(`tab-${nm}-${m}`);
     if (t) t.className = 'ch-tab' + (m === mode ? ' active' : '');
   });
-  // перерисовываем из кеша
   if (ifaceData[nm]) drawIfaceChart(nm, ifaceData[nm], false);
 }
 
-
 // Converts cumulative counter array into per-second rates using timestamps.
-// Returns array of same length (first element = 0).
 function countersToRate(vals, timestamps, intervalSecs) {
   if (!vals || vals.length < 2) return vals || [];
   const out = new Array(vals.length).fill(0);
@@ -819,7 +807,7 @@ function drawIfaceChart(nm, d, initial) {
     opts = {unit:'pkt', legend:true};
     const pr=rxPps.at(-1)||0, ps=txPps.at(-1)||0;
     valStr = `↓${fmtNum(pr)} ↑${fmtNum(ps)} pps`;
-  } else { // errors
+  } else {
     const rxEps = countersToRate(d.err_in,  d.timestamps, 3);
     const txEps = countersToRate(d.err_out, d.timestamps, 3);
     ds = [mkDs('err in/s',  rxEps, CC.red), mkDs('err out/s', txEps, CC.orange)];
@@ -831,7 +819,6 @@ function drawIfaceChart(nm, d, initial) {
   set(`bps-${nm}`, valStr);
   if (initial) makeChart(cid, lbls, ds, opts);
   else {
-    // при смене режима — пересоздаём чарт целиком
     const c = charts[cid];
     if (c && c.data.datasets.length === ds.length &&
         c.data.datasets[0].label === ds[0].label) {
@@ -850,11 +837,9 @@ function renderIfaces(ifaces, initial) {
     ifMax[nm] = Math.max(ifMax[nm]||1, rx, tx);
     const mx = ifMax[nm];
 
-    // кешируем данные
     ifaceData[nm] = d;
     if (!ifaceMode[nm]) ifaceMode[nm] = 'traffic';
 
-    // ratebar
     const bw = document.getElementById(`bw-${nm}`);
     if (bw) bw.innerHTML = `
       <div class="ratebar">
@@ -870,7 +855,6 @@ function renderIfaces(ifaces, initial) {
         <span class="rate-total">${fmtBytes(bsTotal)}</span>
       </div>`;
 
-    // Update header rx/tx with first non-loopback interface
     if (!window._hdrIfSet) {
       const isLoop = nm === 'lo' || nm.startsWith('loop');
       if (!isLoop) {
@@ -943,20 +927,6 @@ function setDot(state){
 function setStatus(state,txt){set('conn-status',txt);setDot(state);}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5000);}
 
-// ══════════════════════════════════════════════
-// Конфигурация хостов
-// Отредактируйте список ниже — добавьте свои хосты.
-// label — отображаемое имя, url — адрес бэкенда SimpleMon.
-// ══════════════════════════════════════════════
-// url: 'http://host:port'  — прямое подключение к бэкенду
-// url: ''                   — относительные пути (nginx proxy, бэкенд за тем же хостом)
-const HOSTS = [
-  { label: 'localhost',        url: '' },               // nginx proxy / same host
-  // { label: 'direct',        url: 'http://127.0.0.1:8095' },
-  // { label: 'server-prod',   url: 'http://192.168.1.10:8095' },
-  // { label: 'server-backup', url: 'http://192.168.1.11:8095' },
-];
-
 // Apply time range filter to metrics data
 function applyRange(d) {
   if (!d || timeRange === 0) return d;
@@ -991,19 +961,16 @@ function buildRangeTabs(retentionSecs, intervalSecs) {
   const container = document.getElementById('tr-tabs');
   if (!container) return;
 
-  // Fixed intermediate steps
   const steps = [];
-  if (retentionSecs > 300)  steps.push(300);   // 5m — always if retention > 5m
-  if (retentionSecs > 60)   steps.push(60);     // 1m — always if retention > 1m
+  if (retentionSecs > 300)  steps.push(300);
+  if (retentionSecs > 60)   steps.push(60);
 
-  // Build: all | retention | 5m (if fits) | 1m (if fits) | interval
   const buttons = [
     { secs: 0,              label: 'all' },
     { secs: retentionSecs,  label: fmtRangeLabel(retentionSecs) },
     ...steps.map(s => ({ secs: s, label: fmtRangeLabel(s) })),
   ];
 
-  // Deduplicate by secs value
   const seen = new Set();
   const unique = buttons.filter(b => {
     if (seen.has(b.secs)) return false;
@@ -1026,17 +993,14 @@ function fmtRangeLabel(secs) {
 
 function setRange(secs) {
   timeRange = secs;
-  // update button states
   document.querySelectorAll('.tr-tab').forEach(b => {
     b.className = 'ch-tab tr-tab' + (parseInt(b.dataset.secs) === secs ? ' active' : '');
   });
-  // re-render from full cached data
   const src = fullData;
   if (src) renderMetrics(applyRange(src), false);
 }
 
 function initHosts() {
-  // ?api= URL-параметр имеет наивысший приоритет
   const qp = new URLSearchParams(location.search);
   if (qp.get('api')) {
     BASE_URL = qp.get('api').replace(/\/$/,'');
@@ -1050,12 +1014,10 @@ function initHosts() {
     document.getElementById('hdr-right').innerHTML =
       `<span style="color:var(--red);font-size:11px">Нет хостов в HOSTS[]</span>`;
     return;
-    return;
   }
 
   renderHostUI(active, 0, active.length === 1);
 
-  // Если хост один — подключаемся сразу
   if (active.length === 1) {
     connectTo(active[0].url);
   }
@@ -1064,11 +1026,9 @@ function initHosts() {
 function renderHostUI(hosts, selectedIdx, autoConnect) {
   const el = document.getElementById('hdr-right');
   if (autoConnect && hosts.length === 1) {
-    // Один хост — просто показываем имя
     el.innerHTML = `<span class="host-label">${hosts[0].label}${hosts[0].url===''?' (proxy)':''}</span>`;
     return;
   }
-  // Несколько хостов — select + кнопка
   const opts = hosts.map((h,i) =>
     `<option value="${h.url}" ${i===selectedIdx?'selected':''}>${h.label}</option>`
   ).join('');
@@ -1084,7 +1044,6 @@ function connectTo(url) {
   connectReal();
 }
 
-// Скрытый элемент для хранения текущего URL (используется в connectReal)
 document.addEventListener('DOMContentLoaded', ()=>{});
 
 initHosts();

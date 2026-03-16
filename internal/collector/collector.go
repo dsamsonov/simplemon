@@ -4,8 +4,10 @@ package collector
 import (
 	"context"
 	"log"
+	"math"
 	"net"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 
@@ -65,11 +67,11 @@ type IfaceMetrics struct {
 
 // IfaceInfo carries static / semi-static interface metadata.
 type IfaceInfo struct {
-	Name    string `json:"name"`
-	MAC     string `json:"mac"`
+	Name    string   `json:"name"`
+	MAC     string   `json:"mac"`
 	IPs     []string `json:"ips"`
-	Speed   uint64 `json:"speed_mbps"` // Mbps, 0 if unknown
-	IsUp    bool   `json:"is_up"`
+	Speed   uint64   `json:"speed_mbps"` // Mbps, 0 if unknown
+	IsUp    bool     `json:"is_up"`
 }
 
 // -------------------------------------------------------------------
@@ -377,6 +379,64 @@ func GetSystemUptime() (uint64, error) {
 	return host.Uptime()
 }
 
+// GetInterfaceOrder returns interface names in display order.
+//
+// Rules:
+//   - If interfaces.include is empty or contains only ".*" → alphabetical order.
+//   - Otherwise → each interface is assigned the index of the first pattern it
+//     matches; interfaces sharing the same pattern index are sorted alphabetically
+//     among themselves. Interfaces that match no pattern are excluded.
+func GetInterfaceOrder(cfg *config.Config) []string {
+	// Determine whether this is the "match-all / default" configuration.
+	isDefaultAll := len(cfg.Interfaces.Include) == 0 ||
+		(len(cfg.Interfaces.Include) == 1 && cfg.Interfaces.Include[0] == ".*")
+
+	ifaces, err := psnet.Interfaces()
+	if err != nil {
+		return nil
+	}
+
+	// Collect interface names that pass the match filter.
+	var names []string
+	for _, iface := range ifaces {
+		if cfg.MatchInterface(iface.Name) {
+			names = append(names, iface.Name)
+		}
+	}
+
+	if isDefaultAll {
+		sort.Strings(names)
+		return names
+	}
+
+	// Sort by (patternIndex, name).
+	patterns := cfg.Interfaces.Include
+	sort.SliceStable(names, func(i, j int) bool {
+		pi := patternIndex(names[i], patterns)
+		pj := patternIndex(names[j], patterns)
+		if pi != pj {
+			return pi < pj
+		}
+		return names[i] < names[j]
+	})
+	return names
+}
+
+// patternIndex returns the index of the first pattern in patterns that matches
+// name, or math.MaxInt32 if none match.
+func patternIndex(name string, patterns []string) int {
+	for i, pat := range patterns {
+		re, err := regexp.Compile(pat)
+		if err != nil {
+			continue
+		}
+		if re.MatchString(name) {
+			return i
+		}
+	}
+	return math.MaxInt32
+}
+
 // readIfaceSpeed reads speed from /sys/class/net/<name>/speed (Linux).
 func readIfaceSpeed(name string) uint64 {
 	path := "/sys/class/net/" + name + "/speed"
@@ -385,7 +445,6 @@ func readIfaceSpeed(name string) uint64 {
 		return 0
 	}
 	var speed uint64
-	// data is like "1000\n"
 	for _, b := range data {
 		if b >= '0' && b <= '9' {
 			speed = speed*10 + uint64(b-'0')

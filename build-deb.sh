@@ -19,9 +19,6 @@ set -euo pipefail
 # ---------- configuration ----------------------------------------------------
 PACKAGE_NAME="simplemon"
 # Normalize version: dpkg requires it to start with a digit.
-# If there are no tags yet, git describe returns a bare commit hash
-# (e.g. "cae91f2-dirty"). In that case we prepend "0.0.0~" so dpkg
-# accepts it and the version sorts below any real release.
 _raw_ver="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "0.0.0")}"
 if [[ ! "$_raw_ver" =~ ^[0-9] ]]; then
     VERSION="1.0.0~${_raw_ver}"
@@ -130,6 +127,10 @@ build_deb() {
     install -Dm 0644 "html/simplemon.html" \
         "${pkg_dir}/var/www/simplemon/simplemon.html"
 
+    # Frontend config (marked as conffile — apt will not overwrite on upgrade)
+    install -Dm 0644 "html/simplemon.config.js" \
+        "${pkg_dir}/var/www/simplemon/simplemon.config.js"
+
     # Installed size (for control file)
     local installed_size
     installed_size=$(du -sk "$pkg_dir" | cut -f1)
@@ -156,8 +157,10 @@ Description: ${DESCRIPTION}
 EOF
 
     # ---------- conffiles -----------------------------------------------------
+    # Both the backend config and the frontend JS config are preserved on upgrade.
     cat > "${pkg_dir}/DEBIAN/conffiles" <<EOF
 /etc/simplemon/simplemon.yaml
+/var/www/simplemon/simplemon.config.js
 EOF
 
     # ---------- preinst -------------------------------------------------------
@@ -192,6 +195,7 @@ echo "  SimpleMon installed and running."
 echo "  Frontend: /var/www/simplemon/simplemon.html"
 echo "  API:      http://127.0.0.1:8095/health"
 echo "  Config:   /etc/simplemon/simplemon.yaml"
+echo "  Hosts:    /var/www/simplemon/simplemon.config.js"
 echo "  Logs:     journalctl -u simplemon -f"
 echo ""
 EOF

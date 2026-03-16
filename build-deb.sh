@@ -21,7 +21,7 @@ PACKAGE_NAME="simplemon"
 # Normalize version: dpkg requires it to start with a digit.
 _raw_ver="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "0.0.0")}"
 if [[ ! "$_raw_ver" =~ ^[0-9] ]]; then
-    VERSION="1.0.0~${_raw_ver}"
+    VERSION="1.1.0~${_raw_ver}"
 else
     VERSION="$_raw_ver"
 fi

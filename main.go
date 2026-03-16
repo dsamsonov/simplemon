@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "1.0.1"
+	version = "1.1.0"
 	cfgPath = flag.String("config", config.DefaultConfigPath, "path to configuration file")
 	ver     = flag.Bool("version", false, "print version and exit")
 )

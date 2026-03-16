@@ -1,7 +1,7 @@
 SimpleMon — список изменений
 =============================
 
-v1.0.1 (2026-03-16)
+v1.1.0 (2026-03-16)
 --------------------
 
 1. Сортировка сетевых интерфейсов по порядку из конфига
@@ -24,12 +24,12 @@ v1.0.1 (2026-03-16)
          - "gre.*"    # gre0, gre1, gre2 — третьими (алфавит внутри)
          - "awg.*"    # awg0, awg1 — четвёртыми
 
+
 2. Отдельный файл конфигурации фронтенда
    ----------------------------------------
    Список хостов вынесен из simplemon.html в отдельный файл
    simplemon.config.js. Это позволяет обновлять фронтенд (simplemon.html)
    не теряя пользовательские настройки.
-
 
    Расположение файла: /var/www/simplemon/simplemon.config.js
 
@@ -40,4 +40,63 @@ v1.0.1 (2026-03-16)
          { label: 'server-prod', url: 'http://192.168.1.10:8095' },
        ]
      };
+
+
+3. Watcher — мониторинг с реакцией на exit code
+   ------------------------------------------------
+   Новый тип объекта конфигурации. Watcher запускает check_command по
+   расписанию, читает его exit code и в зависимости от кода запускает
+   соответствующую action-команду. Результат отображается как виджет
+   на дашборде.
+
+   Особенности:
+   - Каждый watcher — один виджет на дашборде (независимо от количества actions).
+   - widget_type: text  — вывод action-команды отображается как текст.
+   - widget_type: graph — первая строка stdout парсится как float64,
+     хранится в кольцевом буфере той же глубины что и retention_seconds.
+   - Разные actions одного watcher могут иметь разный widget_type —
+     тип виджета обновляется автоматически при смене exit code.
+   - Если exit code не совпал ни с одним action → виджет показывает
+     "unexpected exit code: N".
+   - Если check_command не удалось запустить (ошибка ОС, таймаут) →
+     виджет показывает "check_command failed: <описание ошибки>".
+   - В заголовке виджета отображается последний exit code в квадратных
+     скобках с цветовой индикацией: 0 = зелёный, остальные = оранжевый/красный.
+
+   Конфиг:
+     watchers:
+       - name: "Disk health"
+         check_command: "check-disk.sh"   # только exit code важен
+         interval_seconds: 60
+         actions:
+           - exit_code: 0
+             command: "echo OK"
+             widget_type: text
+           - exit_code: 1
+             command: "df -h"
+             widget_type: text
+           - exit_code: 2
+             command: "df -h && du -sh /* | sort -rh | head -10"
+             widget_type: text
+
+   API — массив watchers добавлен в ответ GET /widgets:
+     {
+       "collected_at": 1234567890,
+       "graphs":   [...],   // обычные graph-виджеты, без изменений
+       "texts":    [...],   // обычные text-виджеты, без изменений
+       "watchers": [
+         {
+           "name":           "Disk health",
+           "type":           "text",
+           "check_command":  "check-disk.sh",
+           "last_exit_code": 1,
+           "last_check_at":  1234567890,
+           "output":         "Filesystem  Size  Used ...",
+           "error":          ""
+         }
+       ]
+     }
+
+   Для graph-watcher в payload добавляются поля:
+     "unit", "points", "timestamps", "values"
 

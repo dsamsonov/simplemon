@@ -11,6 +11,7 @@ import (
 	"simplemon/internal/collector"
 	"simplemon/internal/config"
 	"simplemon/internal/ringbuf"
+	"simplemon/internal/watcher"
 	"simplemon/internal/widget"
 )
 
@@ -19,26 +20,23 @@ type Server struct {
 	cfg       *config.Config
 	collector *collector.Collector
 	widgets   *widget.Runner
+	watchers  *watcher.Runner
 	startedAt time.Time
 	srv       *http.Server
 }
 
 // New creates an API Server.
-func New(cfg *config.Config, col *collector.Collector, wr *widget.Runner) *Server {
+func New(cfg *config.Config, col *collector.Collector, wr *widget.Runner, wa *watcher.Runner) *Server {
 	s := &Server{
 		cfg:       cfg,
 		collector: col,
 		widgets:   wr,
+		watchers:  wa,
 		startedAt: time.Now(),
 	}
 
 	mux := http.NewServeMux()
 
-	// GET /info          – static data: uptime, interface info, core count. Poll rarely (~1/min).
-	// GET /metrics/last  – last 20 points (60 sec). Poll every 3 sec from frontend.
-	// GET /metrics/full  – full history (up to retention_seconds). Request once on page load.
-	// GET /widgets       – all custom widget data (graphs + text). Poll every 3 sec.
-	// GET /health        – liveness check
 	mux.HandleFunc("/info", s.handleInfo)
 	mux.HandleFunc("/metrics/last", s.handleMetricsLast)
 	mux.HandleFunc("/metrics/full", s.handleMetricsFull)
@@ -79,20 +77,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // -------------------------------------------------------------------
-// /info  – static / rarely-changing data
+// /info
 // -------------------------------------------------------------------
 
-// InfoPayload contains data that does not change frequently.
 type InfoPayload struct {
 	CollectedAt       int64                          `json:"collected_at"`
-	BackendUptimeSecs float64                        `json:"backend_uptime_seconds"` // time since simplemon started
+	BackendUptimeSecs float64                        `json:"backend_uptime_seconds"`
 	SystemUptimeSecs  uint64                         `json:"system_uptime_seconds"`
 	IntervalSecs      int                            `json:"interval_secs"`
 	RetentionSecs     int                            `json:"retention_seconds"`
 	BufSize           int                            `json:"buf_size"`
 	NumCPUCores       int                            `json:"num_cpu_cores"`
 	Interfaces        map[string]collector.IfaceInfo `json:"interfaces"`
-	InterfaceOrder    []string                       `json:"interface_order"` // display order for frontend
+	InterfaceOrder    []string                       `json:"interface_order"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -122,19 +119,13 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // -------------------------------------------------------------------
-// /metrics  – time-series data
-//
-// Query params:
-//
-//	?points=N   return last N samples per counter (default 20, 0 = full history)
-//
+// /metrics
 // -------------------------------------------------------------------
 
-// MetricsPayload is the time-series JSON object.
 type MetricsPayload struct {
 	CollectedAt       int64                   `json:"collected_at"`
 	BackendUptimeSecs float64                 `json:"backend_uptime_seconds"`
-	Points            int                     `json:"points"`     // actual number of points returned
+	Points            int                     `json:"points"`
 	CPU               CPUPayload              `json:"cpu"`
 	RAM               MemPayload              `json:"ram"`
 	Swap              MemPayload              `json:"swap"`
@@ -143,12 +134,11 @@ type MetricsPayload struct {
 
 type CPUPayload struct {
 	Timestamps []int64     `json:"timestamps"`
-	Total      []float64   `json:"total"`  // overall usage %,  2 decimal places
-	Cores      [][]float64 `json:"cores"`  // [core_index][sample]
+	Total      []float64   `json:"total"`
+	Cores      [][]float64 `json:"cores"`
 }
 
 type MemPayload struct {
-	// Total is a scalar – it almost never changes, no need to repeat it per sample.
 	TotalBytes uint64    `json:"total_bytes"`
 	UsedBytes  []float64 `json:"used_bytes"`
 	FreeBytes  []float64 `json:"free_bytes"`
@@ -163,7 +153,7 @@ type IfacePayload struct {
 	PacketsSent []float64 `json:"packets_sent"`
 	ErrIn       []float64 `json:"err_in"`
 	ErrOut      []float64 `json:"err_out"`
-	RxRateBits  []float64 `json:"rx_rate_bits"` // bits/s; /1000=kbps, /1e6=Mbps
+	RxRateBits  []float64 `json:"rx_rate_bits"`
 	TxRateBits  []float64 `json:"tx_rate_bits"`
 }
 
@@ -190,12 +180,10 @@ func (s *Server) buildMetrics(points int) *MetricsPayload {
 
 	bufSize := s.cfg.Collector.RetentionSecs / s.cfg.Collector.IntervalSeconds
 
-	// points=0 means full history
 	if points == 0 || points > bufSize {
 		points = bufSize
 	}
 
-	// Actual points may be less than requested if buffer is not yet full
 	actualPoints := m.CPUTotal.Fill()
 	if points < actualPoints {
 		actualPoints = points
@@ -208,7 +196,6 @@ func (s *Server) buildMetrics(points int) *MetricsPayload {
 		Interfaces:        make(map[string]IfacePayload),
 	}
 
-	// --- CPU ---
 	cpuSnap := snapLast(m.CPUTotal, points)
 	p.CPU.Timestamps = snapTimestamps(m.CPUTotal, points)
 	p.CPU.Total = roundSlice(cpuSnap, 2)
@@ -217,20 +204,16 @@ func (s *Server) buildMetrics(points int) *MetricsPayload {
 		p.CPU.Cores[i] = roundSlice(snapLast(ring, points), 2)
 	}
 
-	// --- RAM ---
-	// TotalBytes: take the last non-zero value as a scalar
 	p.RAM.TotalBytes = lastNonZeroUint(m.RAMTotal)
 	p.RAM.UsedBytes = roundSlice(snapLast(m.RAMUsed, points), 0)
 	p.RAM.FreeBytes = roundSlice(snapLast(m.RAMFree, points), 0)
 	p.RAM.UsedPct = roundSlice(snapLast(m.RAMPct, points), 2)
 
-	// --- Swap ---
 	p.Swap.TotalBytes = lastNonZeroUint(m.SwapTotal)
 	p.Swap.UsedBytes = roundSlice(snapLast(m.SwapUsed, points), 0)
 	p.Swap.FreeBytes = roundSlice(snapLast(m.SwapFree, points), 0)
 	p.Swap.UsedPct = roundSlice(snapLast(m.SwapPct, points), 2)
 
-	// --- Interfaces ---
 	ifacesCopy := s.collector.SnapshotIfaces()
 	for name, im := range ifacesCopy {
 		p.Interfaces[name] = IfacePayload{
@@ -253,7 +236,6 @@ func (s *Server) buildMetrics(points int) *MetricsPayload {
 // Ring buffer helpers
 // -------------------------------------------------------------------
 
-// snapSlice returns the last n samples from ring respecting actual fill level.
 func snapSlice(r *ringbuf.Ring, n int) []ringbuf.Sample {
 	all := r.Snapshot()
 	fill := r.Fill()
@@ -270,7 +252,6 @@ func snapSlice(r *ringbuf.Ring, n int) []ringbuf.Sample {
 	return src[fill-n:]
 }
 
-// snapLast returns the last n values from ring (oldest → newest).
 func snapLast(r *ringbuf.Ring, n int) []float64 {
 	samples := snapSlice(r, n)
 	out := make([]float64, len(samples))
@@ -280,7 +261,6 @@ func snapLast(r *ringbuf.Ring, n int) []float64 {
 	return out
 }
 
-// snapTimestamps returns the last n timestamps from ring.
 func snapTimestamps(r *ringbuf.Ring, n int) []int64 {
 	samples := snapSlice(r, n)
 	out := make([]int64, len(samples))
@@ -290,7 +270,6 @@ func snapTimestamps(r *ringbuf.Ring, n int) []int64 {
 	return out
 }
 
-// roundSlice rounds every value to prec decimal places.
 func roundSlice(in []float64, prec int) []float64 {
 	if prec < 0 {
 		return in
@@ -303,7 +282,6 @@ func roundSlice(in []float64, prec int) []float64 {
 	return out
 }
 
-// lastNonZeroUint returns the last non-zero value as uint64 (for TotalBytes).
 func lastNonZeroUint(r *ringbuf.Ring) uint64 {
 	all := r.Snapshot()
 	for i := len(all) - 1; i >= 0; i-- {
@@ -348,10 +326,13 @@ func corsMiddleware(next http.Handler) http.Handler {
 // -------------------------------------------------------------------
 
 // WidgetsPayload is the top-level response for /widgets.
+// graphs and texts are regular widgets — unchanged.
+// watchers is a separate array for watcher widgets only.
 type WidgetsPayload struct {
 	CollectedAt int64                `json:"collected_at"`
 	Graphs      []GraphWidgetPayload `json:"graphs"`
 	Texts       []TextWidgetPayload  `json:"texts"`
+	Watchers    []WatcherPayload     `json:"watchers"`
 }
 
 // GraphWidgetPayload carries time-series data for a graph widget.
@@ -373,6 +354,27 @@ type TextWidgetPayload struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+// WatcherPayload carries the result of a watcher widget.
+// Type determines which fields are populated: for "graph" — Timestamps/Values;
+// for "text" — Output.
+type WatcherPayload struct {
+	Name         string    `json:"name"`
+	Type         string    `json:"type"`           // "graph" or "text"
+	CheckCommand string    `json:"check_command"`
+	LastExitCode int       `json:"last_exit_code"` // exit code of the last check_command run
+	LastCheckAt  int64     `json:"last_check_at"`  // unix timestamp of the last check_command run
+
+	// text fields
+	Output string `json:"output,omitempty"`
+	Error  string `json:"error,omitempty"`
+
+	// graph fields
+	Unit       string    `json:"unit,omitempty"`
+	Points     int       `json:"points,omitempty"`
+	Timestamps []int64   `json:"timestamps,omitempty"`
+	Values     []float64 `json:"values,omitempty"`
+}
+
 func (s *Server) handleWidgets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -386,35 +388,71 @@ func (s *Server) buildWidgets() *WidgetsPayload {
 		CollectedAt: time.Now().Unix(),
 		Graphs:      []GraphWidgetPayload{},
 		Texts:       []TextWidgetPayload{},
+		Watchers:    []WatcherPayload{},
 	}
 
-	if s.widgets == nil {
-		return p
+	// --- Regular widgets (unchanged) ---
+	if s.widgets != nil {
+		for _, g := range s.widgets.Graphs {
+			fill := g.Ring.Fill()
+			p.Graphs = append(p.Graphs, GraphWidgetPayload{
+				Name:       g.Cfg.Name,
+				Unit:       g.Cfg.Unit,
+				Command:    g.Cfg.Command,
+				Points:     fill,
+				Timestamps: snapTimestamps(g.Ring, fill),
+				Values:     snapLast(g.Ring, fill),
+			})
+		}
+
+		for _, t := range s.widgets.Texts {
+			output, errMsg, ts := t.Snapshot()
+			p.Texts = append(p.Texts, TextWidgetPayload{
+				Name:      t.Cfg.Name,
+				Command:   t.Cfg.Command,
+				Output:    output,
+				Error:     errMsg,
+				UpdatedAt: ts,
+			})
+		}
 	}
 
-	for _, g := range s.widgets.Graphs {
-		fill := g.Ring.Fill()
-		timestamps := snapTimestamps(g.Ring, fill)
-		values := snapLast(g.Ring, fill)
-		p.Graphs = append(p.Graphs, GraphWidgetPayload{
-			Name:       g.Cfg.Name,
-			Unit:       g.Cfg.Unit,
-			Command:    g.Cfg.Command,
-			Points:     fill,
-			Timestamps: timestamps,
-			Values:     values,
-		})
-	}
+	// --- Watcher widgets ---
+	if s.watchers != nil {
+		for _, w := range s.watchers.Watchers {
+			wt := w.State.WidgetType()
+			wp := WatcherPayload{
+				Name:         w.Cfg.Name,
+				Type:         string(wt),
+				CheckCommand: w.Cfg.CheckCommand,
+			}
 
-	for _, t := range s.widgets.Texts {
-		output, errMsg, ts := t.Snapshot()
-		p.Texts = append(p.Texts, TextWidgetPayload{
-			Name:      t.Cfg.Name,
-			Command:   t.Cfg.Command,
-			Output:    output,
-			Error:     errMsg,
-			UpdatedAt: ts,
-		})
+			switch wt {
+			case config.WidgetTypeGraph:
+				ring, unit, exitCode, checkAt := w.State.SnapshotGraph()
+				wp.LastExitCode = exitCode
+				wp.LastCheckAt = checkAt
+				wp.Unit = unit
+				if ring != nil {
+					fill := ring.Fill()
+					wp.Points = fill
+					wp.Timestamps = snapTimestamps(ring, fill)
+					wp.Values = snapLast(ring, fill)
+				}
+				// surface any action-command error stored in text fields
+				_, errMsg, _, _ := w.State.SnapshotText()
+				wp.Error = errMsg
+
+			case config.WidgetTypeText:
+				output, errMsg, exitCode, checkAt := w.State.SnapshotText()
+				wp.LastExitCode = exitCode
+				wp.LastCheckAt = checkAt
+				wp.Output = output
+				wp.Error = errMsg
+			}
+
+			p.Watchers = append(p.Watchers, wp)
+		}
 	}
 
 	return p

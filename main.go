@@ -11,6 +11,7 @@ import (
 	"simplemon/internal/api"
 	"simplemon/internal/collector"
 	"simplemon/internal/config"
+	"simplemon/internal/watcher"
 	"simplemon/internal/widget"
 )
 
@@ -43,6 +44,9 @@ func main() {
 	if len(cfg.Widgets) > 0 {
 		log.Printf("widgets: %d configured", len(cfg.Widgets))
 	}
+	if len(cfg.Watchers) > 0 {
+		log.Printf("watchers: %d configured", len(cfg.Watchers))
+	}
 
 	col, err := collector.New(cfg)
 	if err != nil {
@@ -50,14 +54,16 @@ func main() {
 	}
 
 	wr := widget.New(cfg)
+	wa := watcher.New(cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go col.Run(ctx)
 	go wr.Run(ctx)
+	go wa.Run(ctx)
 
-	srv := api.New(cfg, col, wr)
+	srv := api.New(cfg, col, wr, wa)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
 			log.Printf("[main] server stopped: %v", err)

@@ -50,11 +50,15 @@ declare -A GOARCH_MAP=(
     [amd64]="amd64"
     [arm64]="arm64"
     [armhf]="arm"
+    [mips]="mips"
+    [mipsel]="mipsle"
 )
 declare -A GOARM_MAP=(
     [amd64]=""
     [arm64]=""
     [armhf]="7"
+    [mips]=""
+    [mipsel]=""
 )
 
 # ---------- colors -----------------------------------------------------------
@@ -367,13 +371,13 @@ main() {
     if [[ $# -gt 0 ]]; then
         archs=("$@")
     else
-        archs=("amd64" "arm64" "armhf")
+        archs=("amd64" "arm64" "armhf" "mips" "mipsel")
     fi
 
     # Validate architectures
     for arch in "${archs[@]}"; do
         [[ -v GOARCH_MAP[$arch] ]] || \
-            err "Unknown architecture: ${arch}. Supported: amd64, arm64, armhf"
+            err "Unknown architecture: ${arch}. Supported: amd64, arm64, armhf, mips, mipsel"
     done
 
     log "Target architectures: ${archs[*]}"

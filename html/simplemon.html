@@ -42,7 +42,6 @@ body {
   line-height: 1.4;
 }
 
-
 header {
   position: sticky; top: 0; z-index: 100;
   display: flex; align-items: center; gap: 16px;
@@ -100,7 +99,6 @@ header {
 }
 .btn-primary { background: var(--accent2); color: #fff; }
 .btn-primary:hover { background: var(--accent); color: #000; }
-
 
 main {
   padding: 16px 20px; max-width: 1600px; margin: 0 auto;
@@ -175,7 +173,16 @@ main {
 .itag-up { background:var(--green2); color:var(--green); }
 .itag-dn { background:#fef2f2; color:var(--red); }
 
-/* unified interface rows */
+/* exit code badge for watchers */
+.exit-badge {
+  padding:1px 7px; border-radius:2px; font-size:10px; font-weight:700;
+  font-family: var(--mono);
+}
+.exit-ok  { background:var(--green2); color:var(--green); }
+.exit-warn{ background:#fffbeb;      color:var(--orange); }
+.exit-err { background:#fef2f2;      color:var(--red); }
+.exit-unk { background:var(--bg3);   color:var(--text3); }
+
 .iface-grid { display:table; width:100%; border-spacing:0; }
 .iface-row  { display:table-row; }
 .iface-row + .iface-row .ik,
@@ -195,7 +202,6 @@ main {
 }
 .ip-list { display:flex; flex-direction:column; gap:1px; }
 
-/* rate rows */
 .rateblock { margin-top:8px; }
 .ratebar {
   display:grid;
@@ -258,7 +264,6 @@ main {
 .cg{color:var(--green)} .co{color:var(--orange)} .cr{color:var(--red)}
 .ca{color:var(--accent)} .cp{color:var(--purple)} .cy{color:var(--yellow)}
 
-/* chart mode tabs */
 .ch-tabs { display:flex; gap:2px; }
 .tr-tabs { display:flex; gap:2px; margin-left:auto; }
 .ch-tab {
@@ -309,9 +314,7 @@ main {
     <div class="hstat"><span class="hstat-v ca" id="h-tx">—</span><span class="hstat-l" id="h-tx-lbl">— ↑tx</span></div>
   </div>
 
-  <div class="hdr-right" id="hdr-right">
-    <!-- заполняется initHosts() -->
-  </div>
+  <div class="hdr-right" id="hdr-right"></div>
 </header>
 
 <main id="app">
@@ -336,8 +339,7 @@ Chart.defaults.font.family = "'JetBrains Mono', monospace";
 Chart.defaults.font.size = 10;
 
 // ══════════════════════════════════════════════
-// Hosts — loaded from simplemon.config.js
-// Falls back to localhost proxy if config file is missing or malformed.
+// Hosts
 // ══════════════════════════════════════════════
 const HOSTS = (typeof SIMPLEMON_CONFIG !== 'undefined' && SIMPLEMON_CONFIG.hosts && SIMPLEMON_CONFIG.hosts.length)
   ? SIMPLEMON_CONFIG.hosts
@@ -350,9 +352,9 @@ let realMode=false, realTmr=null, realInfoTmr=null;
 let BASE_URL='', charts={}, ifMax={};
 let ifBuilt=false, coresBuilt=false;
 let timeRange=0;
-const memBytes={}; // stores used_bytes arrays for RAM/Swap tooltips
-let fullData=null, lastData=null; // cached responses
-let backendInterval=3; // interval_secs from /info
+const memBytes={};
+let fullData=null;
+let backendInterval=3;
 
 // ══════════════════════════════════════════════
 // Real backend
@@ -372,7 +374,7 @@ async function connectReal() {
       apiFetch('/metrics/full'),
       apiFetch('/widgets').catch(()=>null),
     ]);
-    fullData=full; lastData=null;
+    fullData=full;
     renderInfo(info); renderMetrics(applyRange(full),true); if(wids) renderWidgets(wids);
     setDot('on'); setStatus('ok','Connected · '+tsNow()); realMode=true;
 
@@ -405,15 +407,11 @@ async function connectReal() {
   } catch(e){ setDot('err'); setStatus('err','Failed: '+e.message); showToast('Cannot connect to '+(url||window.location.host)+': '+e.message); }
 }
 
-
-// Merge fresh /metrics/last points into fullData
 function mergeLastIntoFull(full, last) {
   if (!full || !last) return last;
-
   const oldTs = full.cpu.timestamps;
   const newTs = last.cpu.timestamps;
   if (!oldTs || !newTs || !newTs.length) return full;
-
   const lastOldTs = oldTs[oldTs.length - 1] || 0;
   let cutIdx = 0;
   for (let i = 0; i < newTs.length; i++) {
@@ -421,14 +419,12 @@ function mergeLastIntoFull(full, last) {
     cutIdx = newTs.length;
   }
   if (cutIdx >= newTs.length) return full;
-
   function appendSlice(oldArr, newArr) {
     if (!oldArr || !newArr) return oldArr || newArr || [];
     const slice = newArr.slice(cutIdx);
     if (!slice.length) return oldArr;
     return [...oldArr, ...slice];
   }
-
   const mergeIface = (oldIf, newIf) => {
     if (!oldIf || !newIf) return oldIf || newIf;
     const iTs = newIf.timestamps || [];
@@ -452,37 +448,14 @@ function mergeLastIntoFull(full, last) {
       tx_rate_bits: [...oldIf.tx_rate_bits,  ...newIf.tx_rate_bits.slice(iCut)],
     };
   };
-
   const ifaces = {};
-  const allIfNames = new Set([
-    ...Object.keys(full.interfaces||{}),
-    ...Object.keys(last.interfaces||{})
-  ]);
-  allIfNames.forEach(nm => {
-    ifaces[nm] = mergeIface((full.interfaces||{})[nm], (last.interfaces||{})[nm]);
-  });
-
+  const allIfNames = new Set([...Object.keys(full.interfaces||{}),...Object.keys(last.interfaces||{})]);
+  allIfNames.forEach(nm => { ifaces[nm] = mergeIface((full.interfaces||{})[nm], (last.interfaces||{})[nm]); });
   return {
     ...full,
-    cpu: {
-      ...full.cpu,
-      timestamps: appendSlice(full.cpu.timestamps, last.cpu.timestamps),
-      total:      appendSlice(full.cpu.total,      last.cpu.total),
-      cores:      (full.cpu.cores||[]).map((c,i) =>
-                    appendSlice(c, (last.cpu.cores||[])[i]||[])),
-    },
-    ram: {
-      ...full.ram,
-      used_bytes: appendSlice(full.ram.used_bytes, last.ram.used_bytes),
-      free_bytes: appendSlice(full.ram.free_bytes, last.ram.free_bytes),
-      used_pct:   appendSlice(full.ram.used_pct,   last.ram.used_pct),
-    },
-    swap: {
-      ...full.swap,
-      used_bytes: appendSlice(full.swap.used_bytes, last.swap.used_bytes),
-      free_bytes: appendSlice(full.swap.free_bytes, last.swap.free_bytes),
-      used_pct:   appendSlice(full.swap.used_pct,   last.swap.used_pct),
-    },
+    cpu: { ...full.cpu, timestamps: appendSlice(full.cpu.timestamps, last.cpu.timestamps), total: appendSlice(full.cpu.total, last.cpu.total), cores: (full.cpu.cores||[]).map((c,i) => appendSlice(c, (last.cpu.cores||[])[i]||[])) },
+    ram: { ...full.ram, used_bytes: appendSlice(full.ram.used_bytes, last.ram.used_bytes), free_bytes: appendSlice(full.ram.free_bytes, last.ram.free_bytes), used_pct: appendSlice(full.ram.used_pct, last.ram.used_pct) },
+    swap: { ...full.swap, used_bytes: appendSlice(full.swap.used_bytes, last.swap.used_bytes), free_bytes: appendSlice(full.swap.free_bytes, last.swap.free_bytes), used_pct: appendSlice(full.swap.used_pct, last.swap.used_pct) },
     interfaces: ifaces,
   };
 }
@@ -492,9 +465,6 @@ async function apiFetch(path){ const r=await fetch(BASE_URL+path,{cache:'no-stor
 // ══════════════════════════════════════════════
 // UI
 // ══════════════════════════════════════════════
-function resetUI(){ charts={}; ifMax={}; ifBuilt=false; coresBuilt=false;
-  document.getElementById('app').innerHTML=`<div class="empty"><div class="empty-title">SimpleMon</div><div style="color:var(--text2)">Выберите хост для подключения</div></div>`; }
-
 function buildUI(){
   charts={}; ifMax={}; ifBuilt=false; coresBuilt=false;
   document.getElementById('app').innerHTML=`
@@ -537,12 +507,10 @@ function buildUI(){
     </div>
   </div>
 </div>
-
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
   <div class="section-lbl" style="margin-bottom:0">Time range</div>
   <div class="tr-tabs" id="tr-tabs"></div>
 </div>
-
 <div>
   <div class="section-lbl">CPU</div>
   <div class="g2">
@@ -556,7 +524,6 @@ function buildUI(){
     </div>
   </div>
 </div>
-
 <div>
   <div class="section-lbl">Memory</div>
   <div class="g2">
@@ -570,20 +537,21 @@ function buildUI(){
     </div>
   </div>
 </div>
-
 <div>
   <div class="section-lbl">Network Interfaces</div>
   <div class="g-iface" id="iface-info"></div>
 </div>
-
 <div id="sec-iface" style="display:none">
   <div class="section-lbl">Network Traffic</div>
   <div class="g2" id="iface-charts"></div>
 </div>
-
 <div id="sec-widgets" style="display:none">
   <div class="section-lbl">Custom Widgets</div>
   <div class="g2" id="widgets-wrap"></div>
+</div>
+<div id="sec-watchers" style="display:none">
+  <div class="section-lbl">Watchers</div>
+  <div class="g2" id="watchers-wrap"></div>
 </div>`;
 }
 
@@ -664,7 +632,6 @@ function renderInfo(d){
   ifBuilt=true;
 
   const ifaces=d.interfaces||{};
-  // Use interface_order from backend if available, otherwise fall back to sorted keys.
   const names=(d.interface_order && d.interface_order.length)
     ? d.interface_order.filter(n => ifaces[n])
     : Object.keys(ifaces).sort();
@@ -729,7 +696,6 @@ function renderMetrics(d,initial){
   const lbls=ts2lbl(d.cpu.timestamps);
   const cpuDs=[mkDs('CPU %',d.cpu.total,CC.green)];
   if(initial) makeChart('ch-cpu',lbls,cpuDs,{yMax:100}); else updChart('ch-cpu',lbls,cpuDs);
-  set('cpu-cv',fmtP(cpuL));
 
   renderCores(d.cpu.cores);
 
@@ -762,10 +728,7 @@ function renderCores(cores){
   });
 }
 
-// режим графика для каждого интерфейса: 'traffic' | 'packets' | 'errors'
-const ifaceMode = {};
-// кеш последних данных по интерфейсу
-const ifaceData = {};
+const ifaceMode={}, ifaceData={};
 
 function setIfaceMode(nm, mode) {
   ifaceMode[nm] = mode;
@@ -776,7 +739,6 @@ function setIfaceMode(nm, mode) {
   if (ifaceData[nm]) drawIfaceChart(nm, ifaceData[nm], false);
 }
 
-// Converts cumulative counter array into per-second rates using timestamps.
 function countersToRate(vals, timestamps, intervalSecs) {
   if (!vals || vals.length < 2) return vals || [];
   const out = new Array(vals.length).fill(0);
@@ -808,9 +770,9 @@ function drawIfaceChart(nm, d, initial) {
     const pr=rxPps.at(-1)||0, ps=txPps.at(-1)||0;
     valStr = `↓${fmtNum(pr)} ↑${fmtNum(ps)} pps`;
   } else {
-    const rxEps = countersToRate(d.err_in,  d.timestamps, 3);
+    const rxEps = countersToRate(d.err_in, d.timestamps, 3);
     const txEps = countersToRate(d.err_out, d.timestamps, 3);
-    ds = [mkDs('err in/s',  rxEps, CC.red), mkDs('err out/s', txEps, CC.orange)];
+    ds = [mkDs('err in/s', rxEps, CC.red), mkDs('err out/s', txEps, CC.orange)];
     opts = {unit:'err', legend:true};
     const ei=rxEps.at(-1)||0, eo=txEps.at(-1)||0;
     valStr = `in:${fmtNum(ei)}/s out:${fmtNum(eo)}/s`;
@@ -820,8 +782,7 @@ function drawIfaceChart(nm, d, initial) {
   if (initial) makeChart(cid, lbls, ds, opts);
   else {
     const c = charts[cid];
-    if (c && c.data.datasets.length === ds.length &&
-        c.data.datasets[0].label === ds[0].label) {
+    if (c && c.data.datasets.length === ds.length && c.data.datasets[0].label === ds[0].label) {
       updChart(cid, lbls, ds);
     } else {
       makeChart(cid, lbls, ds, opts);
@@ -836,7 +797,6 @@ function renderIfaces(ifaces, initial) {
     const brTotal = d.bytes_recv.at(-1)||0, bsTotal = d.bytes_sent.at(-1)||0;
     ifMax[nm] = Math.max(ifMax[nm]||1, rx, tx);
     const mx = ifMax[nm];
-
     ifaceData[nm] = d;
     if (!ifaceMode[nm]) ifaceMode[nm] = 'traffic';
 
@@ -870,39 +830,160 @@ function renderIfaces(ifaces, initial) {
   });
 }
 
+// ══════════════════════════════════════════════
+// Regular widgets
+// ══════════════════════════════════════════════
 function renderWidgets(d){
   if(!d) return;
-  const sec=document.getElementById('sec-widgets'),wrap=document.getElementById('widgets-wrap');
-  if(!sec||!wrap) return;
-  const has=(d.graphs&&d.graphs.length)||(d.texts&&d.texts.length);
-  if(!has) return;
-  sec.style.display='block';
 
-  (d.graphs||[]).forEach(g=>{
-    const cid='wg-'+g.name.replace(/\W/g,'-');
-    if(!document.getElementById(cid)){
-      const div=document.createElement('div'); div.className='card'; div.id=cid;
-      div.innerHTML=`<div class="card-hd"><span class="card-title">${g.name}</span><span class="card-val" id="${cid}-v">—</span></div><div class="card-body"><div class="ch-wrap"><canvas id="${cid}-ch"></canvas></div></div>`;
-      wrap.appendChild(div);
-    }
-    set(`${cid}-v`,(g.values.at(-1)||0).toFixed(1)+(g.unit?' '+g.unit:''));
-    const ds=[mkDs(g.name,g.values,CC.yellow)];
-    const chid=`${cid}-ch`;
-    if(!charts[chid]){
-      makeChart(chid,ts2lbl(g.timestamps),ds,{unit:'custom'});
-      if(charts[chid]&&g.unit){charts[chid].options.plugins.tooltip.callbacks.label=ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} ${g.unit}`;charts[chid].update('none');}
-    } else updChart(chid,ts2lbl(g.timestamps),ds);
-  });
+  // --- Regular graphs and texts (unchanged) ---
+  const sec=document.getElementById('sec-widgets'), wrap=document.getElementById('widgets-wrap');
+  if(sec && wrap) {
+    const hasRegular=(d.graphs&&d.graphs.length)||(d.texts&&d.texts.length);
+    if(hasRegular) {
+      sec.style.display='block';
 
-  (d.texts||[]).forEach(t=>{
-    const cid='wt-'+t.name.replace(/\W/g,'-');
-    if(!document.getElementById(cid)){
-      const div=document.createElement('div'); div.className='card'; div.id=cid;
-      div.innerHTML=`<div class="card-hd"><span class="card-title">${t.name}</span><span class="card-val" id="${cid}-ts">—</span></div><div class="wtext" id="${cid}-out"></div>`;
-      wrap.appendChild(div);
+      (d.graphs||[]).forEach(g=>{
+        const cid='wg-'+g.name.replace(/\W/g,'-');
+        if(!document.getElementById(cid)){
+          const div=document.createElement('div'); div.className='card'; div.id=cid;
+          div.innerHTML=`<div class="card-hd"><span class="card-title">${g.name}</span><span class="card-val" id="${cid}-v">—</span></div><div class="card-body"><div class="ch-wrap"><canvas id="${cid}-ch"></canvas></div></div>`;
+          wrap.appendChild(div);
+        }
+        set(`${cid}-v`,(g.values.at(-1)||0).toFixed(1)+(g.unit?' '+g.unit:''));
+        const ds=[mkDs(g.name,g.values,CC.yellow)];
+        const chid=`${cid}-ch`;
+        if(!charts[chid]){
+          makeChart(chid,ts2lbl(g.timestamps),ds,{unit:'custom'});
+          if(charts[chid]&&g.unit){charts[chid].options.plugins.tooltip.callbacks.label=ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} ${g.unit}`;charts[chid].update('none');}
+        } else updChart(chid,ts2lbl(g.timestamps),ds);
+      });
+
+      (d.texts||[]).forEach(t=>{
+        const cid='wt-'+t.name.replace(/\W/g,'-');
+        if(!document.getElementById(cid)){
+          const div=document.createElement('div'); div.className='card'; div.id=cid;
+          div.innerHTML=`<div class="card-hd"><span class="card-title">${t.name}</span><span class="card-val" id="${cid}-ts">—</span></div><div class="wtext" id="${cid}-out"></div>`;
+          wrap.appendChild(div);
+        }
+        if(t.updated_at) set(`${cid}-ts`,new Date(t.updated_at*1000).toLocaleTimeString());
+        set(`${cid}-out`,t.error?'ERROR: '+t.error:t.output);
+      });
     }
-    if(t.updated_at) set(`${cid}-ts`,new Date(t.updated_at*1000).toLocaleTimeString());
-    set(`${cid}-out`,t.error?'ERROR: '+t.error:t.output);
+  }
+
+  // --- Watcher widgets ---
+  renderWatchers(d.watchers||[]);
+}
+
+// ══════════════════════════════════════════════
+// Watcher widgets
+// ══════════════════════════════════════════════
+
+// Returns CSS class for exit-code badge.
+function exitBadgeClass(code) {
+  if (code < 0)  return 'exit-unk';
+  if (code === 0) return 'exit-ok';
+  if (code === 1) return 'exit-warn';
+  return 'exit-err';
+}
+
+function renderWatchers(watchers) {
+  if (!watchers || !watchers.length) return;
+
+  const sec  = document.getElementById('sec-watchers');
+  const wrap = document.getElementById('watchers-wrap');
+  if (!sec || !wrap) return;
+  sec.style.display = 'block';
+
+  watchers.forEach(w => {
+    const cid = 'wa-' + w.name.replace(/\W/g, '-');
+    const badgeCls = exitBadgeClass(w.last_exit_code);
+    const badgeTxt = w.last_check_at > 0
+      ? `exit: ${w.last_exit_code}`
+      : '—';
+    const checkedAt = w.last_check_at > 0
+      ? new Date(w.last_check_at * 1000).toLocaleTimeString()
+      : '—';
+
+    if (w.type === 'graph') {
+      // Graph watcher
+      if (!document.getElementById(cid)) {
+        const div = document.createElement('div');
+        div.className = 'card'; div.id = cid;
+        div.innerHTML = `
+          <div class="card-hd">
+            <span class="card-title">${w.name}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="card-val" id="${cid}-v">—</span>
+              <span class="exit-badge ${badgeCls}" id="${cid}-badge">${badgeTxt}</span>
+            </div>
+          </div>
+          <div class="card-body"><div class="ch-wrap"><canvas id="${cid}-ch"></canvas></div></div>
+          <div class="statusbar">
+            <span style="color:var(--text3)">checked</span>
+            <span id="${cid}-at">${checkedAt}</span>
+            ${w.error ? `<span class="cr" id="${cid}-err">${w.error}</span>` : `<span id="${cid}-err"></span>`}
+          </div>`;
+        wrap.appendChild(div);
+      }
+
+      // Update badge
+      const badge = document.getElementById(`${cid}-badge`);
+      if (badge) { badge.textContent = badgeTxt; badge.className = `exit-badge ${badgeCls}`; }
+      set(`${cid}-at`, checkedAt);
+      set(`${cid}-err`, w.error || '');
+
+      // Update chart
+      const vals = w.values || [];
+      const tss  = w.timestamps || [];
+      set(`${cid}-v`, vals.length ? (vals.at(-1)||0).toFixed(1) + (w.unit ? ' '+w.unit : '') : '—');
+      const ds = [mkDs(w.name, vals, CC.yellow)];
+      const chid = `${cid}-ch`;
+      if (!charts[chid]) {
+        makeChart(chid, ts2lbl(tss), ds, {unit:'custom'});
+        if (charts[chid] && w.unit) {
+          charts[chid].options.plugins.tooltip.callbacks.label =
+            ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} ${w.unit}`;
+          charts[chid].update('none');
+        }
+      } else {
+        updChart(chid, ts2lbl(tss), ds);
+      }
+
+    } else {
+      // Text watcher
+      if (!document.getElementById(cid)) {
+        const div = document.createElement('div');
+        div.className = 'card'; div.id = cid;
+        div.innerHTML = `
+          <div class="card-hd">
+            <span class="card-title">${w.name}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:10px;color:var(--text3)" id="${cid}-at">—</span>
+              <span class="exit-badge ${badgeCls}" id="${cid}-badge">${badgeTxt}</span>
+            </div>
+          </div>
+          <div class="wtext" id="${cid}-out"></div>`;
+        wrap.appendChild(div);
+      }
+
+      // Update badge and content
+      const badge = document.getElementById(`${cid}-badge`);
+      if (badge) { badge.textContent = badgeTxt; badge.className = `exit-badge ${badgeCls}`; }
+      set(`${cid}-at`, checkedAt);
+
+      const outEl = document.getElementById(`${cid}-out`);
+      if (outEl) {
+        if (w.error) {
+          outEl.textContent = 'ERROR: ' + w.error;
+          outEl.style.color = 'var(--red)';
+        } else {
+          outEl.textContent = w.output || '';
+          outEl.style.color = '';
+        }
+      }
+    }
   });
 }
 
@@ -927,7 +1008,6 @@ function setDot(state){
 function setStatus(state,txt){set('conn-status',txt);setDot(state);}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5000);}
 
-// Apply time range filter to metrics data
 function applyRange(d) {
   if (!d || timeRange === 0) return d;
   const pts = Math.ceil(timeRange / backendInterval);
@@ -948,56 +1028,45 @@ function applyRange(d) {
   if (d.interfaces) Object.entries(d.interfaces).forEach(([k,v]) => ifaces[k] = sliceIface(v));
   return {
     ...d,
-    cpu: { ...d.cpu, timestamps: sliceArr(d.cpu.timestamps), total: sliceArr(d.cpu.total), cores: (d.cpu.cores||[]).map(sliceArr) },
-    ram: { ...d.ram, used_bytes: sliceArr(d.ram.used_bytes), free_bytes: sliceArr(d.ram.free_bytes), used_pct: sliceArr(d.ram.used_pct) },
+    cpu:  { ...d.cpu,  timestamps: sliceArr(d.cpu.timestamps),  total: sliceArr(d.cpu.total),  cores: (d.cpu.cores||[]).map(sliceArr) },
+    ram:  { ...d.ram,  used_bytes: sliceArr(d.ram.used_bytes),  free_bytes: sliceArr(d.ram.free_bytes),  used_pct: sliceArr(d.ram.used_pct) },
     swap: { ...d.swap, used_bytes: sliceArr(d.swap.used_bytes), free_bytes: sliceArr(d.swap.free_bytes), used_pct: sliceArr(d.swap.used_pct) },
     interfaces: ifaces,
   };
 }
 
-// Build time range buttons from backend info
 function buildRangeTabs(retentionSecs, intervalSecs) {
   backendInterval = intervalSecs || 3;
   const container = document.getElementById('tr-tabs');
   if (!container) return;
-
   const steps = [];
-  if (retentionSecs > 300)  steps.push(300);
-  if (retentionSecs > 60)   steps.push(60);
-
+  if (retentionSecs > 300) steps.push(300);
+  if (retentionSecs > 60)  steps.push(60);
   const buttons = [
-    { secs: 0,              label: 'all' },
-    { secs: retentionSecs,  label: fmtRangeLabel(retentionSecs) },
+    { secs: 0,             label: 'all' },
+    { secs: retentionSecs, label: fmtRangeLabel(retentionSecs) },
     ...steps.map(s => ({ secs: s, label: fmtRangeLabel(s) })),
   ];
-
   const seen = new Set();
-  const unique = buttons.filter(b => {
-    if (seen.has(b.secs)) return false;
-    seen.add(b.secs);
-    return true;
-  });
-
+  const unique = buttons.filter(b => { if (seen.has(b.secs)) return false; seen.add(b.secs); return true; });
   container.innerHTML = unique.map(b =>
-    `<button class="ch-tab tr-tab${b.secs === timeRange ? ' active' : ''}"
-      data-secs="${b.secs}" onclick="setRange(${b.secs})">${b.label}</button>`
+    `<button class="ch-tab tr-tab${b.secs===timeRange?' active':''}" data-secs="${b.secs}" onclick="setRange(${b.secs})">${b.label}</button>`
   ).join('');
 }
 
 function fmtRangeLabel(secs) {
-  if (secs === 0)   return 'all';
-  if (secs < 60)    return secs + 's';
-  if (secs < 3600)  return (secs / 60) + 'm';
-  return (secs / 3600) + 'h';
+  if (secs === 0)  return 'all';
+  if (secs < 60)   return secs+'s';
+  if (secs < 3600) return (secs/60)+'m';
+  return (secs/3600)+'h';
 }
 
 function setRange(secs) {
   timeRange = secs;
   document.querySelectorAll('.tr-tab').forEach(b => {
-    b.className = 'ch-tab tr-tab' + (parseInt(b.dataset.secs) === secs ? ' active' : '');
+    b.className = 'ch-tab tr-tab' + (parseInt(b.dataset.secs)===secs?' active':'');
   });
-  const src = fullData;
-  if (src) renderMetrics(applyRange(src), false);
+  if (fullData) renderMetrics(applyRange(fullData), false);
 }
 
 function initHosts() {
@@ -1008,19 +1077,14 @@ function initHosts() {
     connectTo(BASE_URL);
     return;
   }
-
   const active = HOSTS.filter(h => h.url !== undefined && h.url !== null);
   if (!active.length) {
     document.getElementById('hdr-right').innerHTML =
       `<span style="color:var(--red);font-size:11px">Нет хостов в HOSTS[]</span>`;
     return;
   }
-
   renderHostUI(active, 0, active.length === 1);
-
-  if (active.length === 1) {
-    connectTo(active[0].url);
-  }
+  if (active.length === 1) connectTo(active[0].url);
 }
 
 function renderHostUI(hosts, selectedIdx, autoConnect) {
@@ -1043,8 +1107,6 @@ function connectTo(url) {
   BASE_URL = (url || '').replace(/\/$/,'');
   connectReal();
 }
-
-document.addEventListener('DOMContentLoaded', ()=>{});
 
 initHosts();
 </script>

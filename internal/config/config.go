@@ -15,21 +15,41 @@ type Config struct {
 	Interfaces InterfacesConfig `yaml:"interfaces"`
 	Collector  CollectorConfig  `yaml:"collector"`
 	Widgets    []WidgetConfig   `yaml:"widgets"`
+	Watchers   []WatcherConfig  `yaml:"watchers"`
 }
 
+// WidgetType defines how the widget output is handled.
 type WidgetType string
 
 const (
-	WidgetTypeGraph WidgetType = "graph"
-	WidgetTypeText  WidgetType = "text"
+	WidgetTypeGraph WidgetType = "graph" // parse first line as float64, store in ring buffer
+	WidgetTypeText  WidgetType = "text"  // store full output (up to 200 lines)
 )
 
+// WidgetConfig describes a single user-defined widget.
 type WidgetConfig struct {
 	Name            string     `yaml:"name"`
 	Type            WidgetType `yaml:"type"`
 	Command         string     `yaml:"command"`
 	IntervalSeconds int        `yaml:"interval_seconds"`
 	Unit            string     `yaml:"unit"`
+}
+
+// WatcherConfig describes a watcher: a check command whose exit code
+// determines which action command to run, with results shown as a widget.
+type WatcherConfig struct {
+	Name            string          `yaml:"name"`
+	CheckCommand    string          `yaml:"check_command"`
+	IntervalSeconds int             `yaml:"interval_seconds"` // 0 = use collector interval
+	Actions         []WatcherAction `yaml:"actions"`
+}
+
+// WatcherAction maps an exit code to a command and widget output type.
+type WatcherAction struct {
+	ExitCode   int        `yaml:"exit_code"`
+	Command    string     `yaml:"command"`
+	WidgetType WidgetType `yaml:"widget_type"` // "graph" or "text"
+	Unit       string     `yaml:"unit"`        // optional, for graph type
 }
 
 type ListenConfig struct {
@@ -110,13 +130,37 @@ func (c *Config) validate() error {
 			return fmt.Errorf("widget %q: interval_seconds must be >= 0", w.Name)
 		}
 	}
+	for i, w := range c.Watchers {
+		if w.Name == "" {
+			return fmt.Errorf("watcher[%d]: name is required", i)
+		}
+		if w.CheckCommand == "" {
+			return fmt.Errorf("watcher %q: check_command is required", w.Name)
+		}
+		if w.IntervalSeconds < 0 {
+			return fmt.Errorf("watcher %q: interval_seconds must be >= 0", w.Name)
+		}
+		if len(w.Actions) == 0 {
+			return fmt.Errorf("watcher %q: at least one action is required", w.Name)
+		}
+		for j, a := range w.Actions {
+			if a.Command == "" {
+				return fmt.Errorf("watcher %q action[%d]: command is required", w.Name, j)
+			}
+			if a.WidgetType != WidgetTypeGraph && a.WidgetType != WidgetTypeText {
+				return fmt.Errorf("watcher %q action[%d]: widget_type must be \"graph\" or \"text\"", w.Name, j)
+			}
+		}
+	}
 	return nil
 }
 
+// ListenAddr returns "address:port" string.
 func (c *Config) ListenAddr() string {
 	return fmt.Sprintf("%s:%d", c.Listen.Address, c.Listen.Port)
 }
 
+// MatchInterface returns true if ifname matches any of the configured patterns.
 func (c *Config) MatchInterface(ifname string) bool {
 	for _, pat := range c.Interfaces.Include {
 		re := regexp.MustCompile(pat)

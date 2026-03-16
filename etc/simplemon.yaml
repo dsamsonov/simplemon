@@ -8,15 +8,15 @@ listen:
 interfaces:
   include:
     - ".*"               # monitor all interfaces (regexp)
-    # - "eth.*"          # or only ethX interfaces
+    # - "eth.*"
     # - "ens.*"
-    # - "^lo$"           # loopback by exact name
+    # - "^lo$"
 
 collector:
-  interval_seconds: 3    # collect every N seconds
-  retention_seconds: 1800  # keep 30 minutes of history (1800/3 = 600 data points)
+  interval_seconds: 3
+  retention_seconds: 1800  # 30 min
 
-# Custom widgets (optional)
+# Regular widgets (optional)
 widgets:
   - name: "Open file descriptors"
     type: graph
@@ -28,19 +28,80 @@ widgets:
     type: text
     command: "df -h"
 
-# Examples (uncomment to use):
+# Watchers (optional)
 #
-#   - name: "CPU temperature"
-#     type: graph
-#     command: "sensors | grep 'Core 0' | awk '{print $3}' | tr -d '+°C'"
-#     interval_seconds: 5
-#     unit: "°C"
+# A watcher runs check_command on a schedule, inspects its exit code,
+# and dispatches to the matching action. All actions of one watcher
+# share a single widget on the dashboard.
 #
-#   - name: "nginx status"
-#     type: text
-#     command: "systemctl status nginx"
+# Exit code flow:
+#   check_command exits 0  → run action with exit_code: 0
+#   check_command exits 1  → run action with exit_code: 1
+#   check_command exits N  → run action with exit_code: N
+#   no matching action     → widget shows "unexpected exit code: N"
+#   check_command fails    → widget shows "check_command failed: <error>"
 #
-#   - name: "top processes"
-#     type: text
-#     command: "ps aux --sort=-%cpu | head -10"
-#     interval_seconds: 10
+# widget_type: text   — full stdout of the action command, up to 200 lines
+# widget_type: graph  — first line of stdout parsed as float64, stored in
+#                       a ring buffer (same depth as retention_seconds)
+#
+# Examples:
+#
+watchers:
+  - name: "Disk health"
+    check_command: "df / | awk 'NR==2{gsub(/%/,\"\",$5); exit ($5 > 90) ? 2 : ($5 > 75) ? 1 : 0}'"
+    interval_seconds: 60
+    actions:
+      - exit_code: 0
+        command: "echo 'OK'"
+        widget_type: text
+      - exit_code: 1
+        command: "df -h"
+        widget_type: text
+      - exit_code: 2
+        command: "df -h && echo '--- du top10 ---' && du -sh /* 2>/dev/null | sort -rh | head -10"
+        widget_type: text
+
+# More watcher examples (uncomment to use):
+#
+#  - name: "Service nginx"
+#    check_command: "systemctl is-active --quiet nginx && exit 0 || exit 1"
+#    interval_seconds: 30
+#    actions:
+#      - exit_code: 0
+#        command: "systemctl status nginx --no-pager -l"
+#        widget_type: text
+#      - exit_code: 1
+#        command: "journalctl -u nginx -n 50 --no-pager"
+#        widget_type: text
+#
+#  - name: "CPU temperature"
+#    check_command: |
+#      t=$(sensors | grep 'Core 0' | awk '{print $3}' | tr -d '+°C' | cut -d. -f1)
+#      [ "$t" -ge 80 ] && exit 2
+#      [ "$t" -ge 70 ] && exit 1
+#      exit 0
+#    interval_seconds: 10
+#    actions:
+#      - exit_code: 0
+#        command: "sensors | grep 'Core 0' | awk '{print $3}' | tr -d '+°C'"
+#        widget_type: graph
+#        unit: "°C"
+#      - exit_code: 1
+#        command: "sensors | grep 'Core 0' | awk '{print $3}' | tr -d '+°C'"
+#        widget_type: graph
+#        unit: "°C"
+#      - exit_code: 2
+#        command: "sensors"
+#        widget_type: text
+#
+#  - name: "Ping gateway"
+#    check_command: "ping -c1 -W1 192.168.1.1 >/dev/null 2>&1 && exit 0 || exit 1"
+#    interval_seconds: 15
+#    actions:
+#      - exit_code: 0
+#        command: "ping -c5 192.168.1.1 | tail -2"
+#        widget_type: text
+#      - exit_code: 1
+#        command: "ip route && echo '--- arp ---' && arp -n"
+#        widget_type: text

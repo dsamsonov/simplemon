@@ -26,7 +26,7 @@ build:  ## Build binary for the current platform
 	@echo "Done: bin/$(BINARY)"
 
 .PHONY: build-all
-build-all: build-amd64 build-arm64 build-armhf  ## Build binaries for all architectures
+build-all: build-amd64 build-arm64 build-armhf build-mips build-mipsel  ## Build binaries for all architectures
 
 .PHONY: build-amd64
 build-amd64:  ## Build for amd64
@@ -42,6 +42,16 @@ build-arm64:  ## Build for arm64
 build-armhf:  ## Build for armhf (ARM 32-bit v7)
 	@mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(BUILD_FLAGS) -o bin/$(BINARY)-armhf .
+
+.PHONY: build-mips
+build-mips:  ## Build for mips (big-endian)
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips go build $(BUILD_FLAGS) -o bin/$(BINARY)-mips .
+
+.PHONY: build-mipsel
+build-mipsel:  ## Build for mipsel (little-endian)
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle go build $(BUILD_FLAGS) -o bin/$(BINARY)-mipsel .
 
 # ---------- deb packages -----------------------------------------------------
 
@@ -86,6 +96,16 @@ tar-arm64:  ## Build .tar.gz for arm64 only
 tar-armhf:  ## Build .tar.gz for armhf only
 	@chmod +x build-tar.sh
 	VERSION=$(VERSION) ./build-tar.sh armhf
+
+.PHONY: tar-mips
+tar-mips:  ## Build .tar.gz for mips only
+	@chmod +x build-tar.sh
+	VERSION=$(VERSION) ./build-tar.sh mips
+
+.PHONY: tar-mipsel
+tar-mipsel:  ## Build .tar.gz for mipsel only
+	@chmod +x build-tar.sh
+	VERSION=$(VERSION) ./build-tar.sh mipsel
 
 .PHONY: dist
 dist: deb tar  ## Build all release artifacts (.deb + .tar.gz) for all architectures
